@@ -9,9 +9,9 @@ When you wrap your LangChain agent with this callback handler, every agent actio
 - `agent.id`
 - `agent.public_key.algorithm`
 - `agent.capability` (set to the invoked tool name)
-- `agent.trust_score`
-- `agent.drift_score`
-- `agent.scan_verdict`
+- `agent.trust_score` (supplied to the handler constructor; default `1.0`; producer wires from whatever trust model they trust)
+- `agent.drift_score` (supplied to the handler constructor; default `0.0`; producer wires from whatever drift detector they trust)
+- `agent.scan_verdict` (supplied to the handler constructor; default `"unknown"`; producer wires from whatever scanner they trust)
 - `fga.step` (set to `"capability_check"`)
 - `fga.outcome` (set to `"ALLOW"` on success or `"ERROR"` on tool error)
 - `fga.denied_by` (set when `fga.outcome` is `"ERROR"`)
@@ -79,9 +79,9 @@ When the agent runs, the resulting span carries all 9 locked SemConv attributes:
 - `agent.id`
 - `agent.public_key.algorithm`
 - `agent.capability`
-- `agent.trust_score`
-- `agent.drift_score`
-- `agent.scan_verdict`
+- `agent.trust_score` (producer-emitted decision input)
+- `agent.drift_score` (producer-emitted decision input)
+- `agent.scan_verdict` (producer-emitted decision input)
 - `fga.step`
 - `fga.outcome`
 - `fga.denied_by`

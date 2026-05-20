@@ -44,7 +44,12 @@ groups:
       - id: agent.scan_verdict
         type: string
         stability: experimental
-        brief: Most recent security scan verdict for this agent.
+        brief: >
+          Most recent producer-emitted security scan verdict for this agent.
+          Producer-defined provenance: the convention standardizes the attribute
+          name and the enum range, not which scanner produced the value or how
+          often it is refreshed. Producers documenting their scanning methodology
+          is recommended but not normative.
         examples:
           - "clean"
           - "warnings"
