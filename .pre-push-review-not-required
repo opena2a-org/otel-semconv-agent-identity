@@ -1,0 +1,1 @@
+docs + proposal-spec repo: YAMLs, README, mirrored OBSERVABILITY.md, one example file. No build or test surface that warrants the 8-phase pre-push gate.
