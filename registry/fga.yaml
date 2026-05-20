@@ -1,0 +1,39 @@
+groups:
+  - id: registry.fga
+    type: attribute_group
+    display_name: Fine-Grained Authorization Attributes
+    brief: >
+      Decision-path attributes for fine-grained authorization spans.
+    attributes:
+      - id: fga.step
+        type: string
+        stability: experimental
+        brief: The fine-grained authorization step that produced this span.
+        examples:
+          - "capability_check"
+          - "attribute_check"
+          - "context_check"
+          - "chain_check"
+          - "intent_check"
+      - id: fga.outcome
+        type: string
+        stability: experimental
+        brief: The decision outcome.
+        examples:
+          - "ALLOW"
+          - "DENY"
+          - "DENY_INTENT"
+          - "DENY_CONTEXT"
+          - "DENY_CHAIN"
+          - "DENY_ATTRIBUTE"
+          - "ERROR"
+      - id: fga.denied_by
+        type: string
+        stability: experimental
+        brief: >
+          Which step denied, when fga.outcome starts with DENY. Matches one of
+          the fga.step enum values.
+        examples:
+          - "capability_check"
+          - "attribute_check"
+          - "intent_check"

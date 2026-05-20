@@ -1,0 +1,53 @@
+groups:
+  - id: registry.agent
+    type: attribute_group
+    display_name: Agent Identity Attributes
+    brief: >
+      Identity and authorization attributes for AI agent observability.
+    attributes:
+      - id: agent.id
+        type: string
+        stability: experimental
+        brief: Stable identifier for the agent instance.
+        examples:
+          - "agent-7f3a9c2e"
+          - "did:web:agents.opena2a.org:agent123"
+      - id: agent.public_key.algorithm
+        type: string
+        stability: experimental
+        brief: Cryptographic algorithm of the agent's identity keypair.
+        examples:
+          - "ed25519"
+          - "ml-dsa-65"
+      - id: agent.capability
+        type: string
+        stability: experimental
+        brief: >
+          The capability the agent is attempting to invoke. Free-form string
+          matching the producer's capability namespace.
+        examples:
+          - "database.read"
+          - "email.send"
+          - "code.execute"
+      - id: agent.trust_score
+        type: double
+        stability: experimental
+        brief: >
+          Producer-emitted trust score at decision time. Range 0.0 to 1.0.
+          Producer-defined semantics. Not normative.
+      - id: agent.drift_score
+        type: double
+        stability: experimental
+        brief: >
+          Producer-emitted behavioral drift score at decision time. Range 0.0 to 1.0.
+          Producer-defined semantics. Not normative.
+      - id: agent.scan_verdict
+        type: string
+        stability: experimental
+        brief: Most recent security scan verdict for this agent.
+        examples:
+          - "clean"
+          - "warnings"
+          - "findings"
+          - "critical"
+          - "unknown"
