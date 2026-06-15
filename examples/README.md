@@ -6,12 +6,13 @@ This example shows how to instrument a LangChain agent to emit OpenA2A agent ide
 
 When you wrap your LangChain agent with this callback handler, every agent action produces an OpenTelemetry span with these attributes:
 
-- `agent.id`
-- `agent.public_key.algorithm`
-- `agent.capability` (set to the invoked tool name)
-- `agent.trust_score` (supplied to the handler constructor; default `1.0`; producer wires from whatever trust model they trust)
-- `agent.drift_score` (supplied to the handler constructor; default `0.0`; producer wires from whatever drift detector they trust)
-- `agent.scan_verdict` (supplied to the handler constructor; default `"unknown"`; producer wires from whatever scanner they trust)
+- `gen_ai.agent.id`
+- `gen_ai.agent.public_key.algorithm`
+- `gen_ai.agent.capability` (set to the invoked tool name)
+- `gen_ai.agent.trust.score` (supplied to the handler constructor; default `1.0`; producer wires from whatever trust model they trust)
+- `gen_ai.agent.drift.score` (supplied to the handler constructor; default `0.0`; producer wires from whatever drift detector they trust)
+- `gen_ai.agent.scan.verdict` (supplied to the handler constructor; default `"unknown"`; producer wires from whatever scanner they trust)
+- `gen_ai.agent.trust.method` / `gen_ai.agent.drift.method` / `gen_ai.agent.scan.method` (optional; emitted only when the producer supplies a method/version token for the corresponding score or verdict)
 - `fga.step` (set to `"capability_check"`)
 - `fga.outcome` (set to `"ALLOW"` on success or `"ERROR"` on tool error)
 - `fga.denied_by` (set when `fga.outcome` is `"ERROR"`)
@@ -50,7 +51,7 @@ That is the 10 lines. The handler does the rest.
 
 ## See your traces
 
-If you are running the AIM OTel demo stack (`apps/backend/deployments/otel-demo` in `agent-identity-management`), open Grafana at http://localhost:3001 and find your trace in Tempo. The 9 attributes will be on the span.
+If you are running the AIM OTel demo stack (`apps/backend/deployments/otel-demo` in `agent-identity-management`), open Grafana at http://localhost:3001 and find your trace in Tempo. The attributes will be on the span.
 
 ## Minimal LangChain agent (reference implementation)
 
@@ -74,14 +75,15 @@ handler = AgentIdentityCallbackHandler(agent_id="minimal-demo-001")
 AgentExecutor(agent=your_agent, tools=your_tools, callbacks=[handler]).invoke({"input": "..."})
 ```
 
-When the agent runs, the resulting span carries all 9 locked SemConv attributes:
+When the agent runs, the resulting span carries the SemConv attributes:
 
-- `agent.id`
-- `agent.public_key.algorithm`
-- `agent.capability`
-- `agent.trust_score` (producer-emitted decision input)
-- `agent.drift_score` (producer-emitted decision input)
-- `agent.scan_verdict` (producer-emitted decision input)
+- `gen_ai.agent.id`
+- `gen_ai.agent.public_key.algorithm`
+- `gen_ai.agent.capability`
+- `gen_ai.agent.trust.score` (producer-emitted decision input)
+- `gen_ai.agent.drift.score` (producer-emitted decision input)
+- `gen_ai.agent.scan.verdict` (producer-emitted decision input)
+- `gen_ai.agent.{trust,drift,scan}.method` (optional method/version tokens, emitted when supplied)
 - `fga.step`
 - `fga.outcome`
 - `fga.denied_by`

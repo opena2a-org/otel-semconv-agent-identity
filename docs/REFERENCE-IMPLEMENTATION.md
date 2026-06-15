@@ -10,7 +10,9 @@ When `OBSERVABILITY.md` in the AIM repo is updated, this file should be updated 
 
 The AIM Go backend emits OpenTelemetry traces, metrics, and logs over OTLP gRPC. This document covers how to run the demo stack, configure the exporter, query the data, and the canonical SemConv attribute names emitted by the backend.
 
-This implementation is the reference for the AIM SemConv proposal pitched at the Observability Summit (Talk 2 Slides 13-15). Attribute names emitted here are LOCKED to that proposal.
+This implementation is the reference for the AIM SemConv proposal pitched at the Observability Summit (Talk 2 Slides 13-15).
+
+> **Naming / migration note.** The attribute names documented below are the names the AIM backend **emits today** (`agent.id`, `agent.trust_score`, `agent.drift_score`, `agent.scan_verdict`, `fga.*`, etc.). Since the talk, the upstream proposal ([open-telemetry/semantic-conventions-genai#291](https://github.com/open-telemetry/semantic-conventions-genai/pull/291), issue [#180](https://github.com/open-telemetry/semantic-conventions-genai/issues/180)) has scoped the agent attributes under the `gen_ai.agent.*` namespace, split the scores into `.score`/`.method` pairs, and added the `.method` companion tokens — see `registry/agent.yaml` for the proposed definitions. AIM's emitter migration to the scoped names is tracked and will land with the emitter update; until then this document reflects the current (pre-scoping) emission and the proposal is intentionally ahead of it.
 
 ## Quick start
 
