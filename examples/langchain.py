@@ -2,8 +2,9 @@
 
 This file is part of the proposal at https://github.com/opena2a-org/otel-semconv-agent-identity.
 
-Add ten lines to your existing LangChain agent setup to emit agent.id, agent.capability,
-and FGA outcome attributes on OpenTelemetry spans. See examples/README.md for usage.
+Add ten lines to your existing LangChain agent setup to emit the gen_ai.agent.* identity,
+capability, score, and FGA outcome attributes on OpenTelemetry spans. See examples/README.md
+for usage.
 
 Apache 2.0 licensed.
 """
@@ -54,15 +55,20 @@ except ImportError:  # pragma: no cover
         """
 
 
-# Locked attribute names. Do not rename without updating the proposal at
+# Attribute names track the proposed convention at
 # https://github.com/opena2a-org/otel-semconv-agent-identity/blob/main/registry/agent.yaml
-# and the AIM backend at apps/backend/docs/OBSERVABILITY.md.
-ATTR_AGENT_ID = "agent.id"
-ATTR_AGENT_PUBKEY_ALG = "agent.public_key.algorithm"
-ATTR_AGENT_CAPABILITY = "agent.capability"
-ATTR_AGENT_TRUST_SCORE = "agent.trust_score"
-ATTR_AGENT_DRIFT_SCORE = "agent.drift_score"
-ATTR_AGENT_SCAN_VERDICT = "agent.scan_verdict"
+# and upstream open-telemetry/semantic-conventions-genai#291. Scores are scoped under the
+# gen_ai.agent.* namespace and each carries an opaque .method token.
+ATTR_AGENT_ID = "gen_ai.agent.id"
+ATTR_AGENT_PUBKEY_ALG = "gen_ai.agent.public_key.algorithm"
+ATTR_AGENT_CAPABILITY = "gen_ai.agent.capability"
+ATTR_AGENT_TRUST_SCORE = "gen_ai.agent.trust.score"
+ATTR_AGENT_TRUST_METHOD = "gen_ai.agent.trust.method"
+ATTR_AGENT_DRIFT_SCORE = "gen_ai.agent.drift.score"
+ATTR_AGENT_DRIFT_METHOD = "gen_ai.agent.drift.method"
+ATTR_AGENT_SCAN_VERDICT = "gen_ai.agent.scan.verdict"
+ATTR_AGENT_SCAN_METHOD = "gen_ai.agent.scan.method"
+# FGA decision-path names are kept unscoped pending the working-group namespace decision (#180).
 ATTR_FGA_STEP = "fga.step"
 ATTR_FGA_OUTCOME = "fga.outcome"
 ATTR_FGA_DENIED_BY = "fga.denied_by"
@@ -90,6 +96,11 @@ class AgentIdentityCallbackHandler(BaseCallbackHandler):
         Producer-emitted behavioral drift score at decision time. Range 0.0 to 1.0. Default 0.0.
     scan_verdict:
         Most recent security scan verdict. Default "unknown".
+    trust_method / drift_method / scan_method:
+        Optional opaque, producer-scoped tokens for the method and version that produced the
+        corresponding score or verdict (e.g. "trust-model@2.3.1"). Emitted as
+        gen_ai.agent.{trust,drift,scan}.method only when supplied. Consumers compare a token for
+        equality; a changed token signals the scoring method moved, not the agent.
     tracer:
         Optional OpenTelemetry Tracer. If None, one is obtained via
         trace.get_tracer("opena2a.langchain").
@@ -102,6 +113,9 @@ class AgentIdentityCallbackHandler(BaseCallbackHandler):
         trust_score: float = 1.0,
         drift_score: float = 0.0,
         scan_verdict: str = "unknown",
+        trust_method: Optional[str] = None,
+        drift_method: Optional[str] = None,
+        scan_method: Optional[str] = None,
         tracer: Optional[Tracer] = None,
     ) -> None:
         if not _OTEL_AVAILABLE:
@@ -121,11 +135,14 @@ class AgentIdentityCallbackHandler(BaseCallbackHandler):
         self.trust_score = float(trust_score)
         self.drift_score = float(drift_score)
         self.scan_verdict = scan_verdict
+        self.trust_method = trust_method
+        self.drift_method = drift_method
+        self.scan_method = scan_method
         self._tracer: Tracer = tracer or trace.get_tracer(_DEFAULT_TRACER_NAME)
         self._spans: Dict[Any, Span] = {}
 
     def _base_attributes(self, capability: str) -> Dict[str, Any]:
-        return {
+        attrs: Dict[str, Any] = {
             ATTR_AGENT_ID: self.agent_id,
             ATTR_AGENT_PUBKEY_ALG: self.public_key_algorithm,
             ATTR_AGENT_CAPABILITY: capability,
@@ -134,6 +151,15 @@ class AgentIdentityCallbackHandler(BaseCallbackHandler):
             ATTR_AGENT_SCAN_VERDICT: self.scan_verdict,
             ATTR_FGA_STEP: "capability_check",
         }
+        # Emit each .method token only when the producer supplies one. A consumer compares the
+        # token for equality to tell a scoring-method change from a real change in the agent.
+        if self.trust_method is not None:
+            attrs[ATTR_AGENT_TRUST_METHOD] = self.trust_method
+        if self.drift_method is not None:
+            attrs[ATTR_AGENT_DRIFT_METHOD] = self.drift_method
+        if self.scan_method is not None:
+            attrs[ATTR_AGENT_SCAN_METHOD] = self.scan_method
+        return attrs
 
     def on_agent_action(self, action: Any, **kwargs: Any) -> None:
         """Start a span for the agent action. Stores it by run_id for later end events."""

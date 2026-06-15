@@ -3,7 +3,11 @@ groups:
     type: attribute_group
     display_name: Fine-Grained Authorization Attributes
     brief: >
-      Decision-path attributes for fine-grained authorization spans.
+      Decision-path attributes for fine-grained authorization spans. The namespace placement of
+      these attributes (alongside gen_ai.agent.*, under gen_ai.agent.fga.*, or elsewhere) is
+      pending the working-group decision asked for in
+      open-telemetry/semantic-conventions-genai#180, so they are kept unscoped here and deferred
+      from #291.
     attributes:
       - id: fga.step
         type: string

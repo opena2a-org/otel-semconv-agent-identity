@@ -1,58 +1,98 @@
 groups:
-  - id: registry.agent
+  - id: registry.gen_ai.agent
     type: attribute_group
-    display_name: Agent Identity Attributes
+    display_name: Agent Identity and Authorization Attributes
     brief: >
-      Identity and authorization attributes for AI agent observability.
+      Identity and authorization attributes for AI agent observability, scoped under the
+      gen_ai.agent.* namespace per the OpenTelemetry GenAI semantic conventions
+      (open-telemetry/semantic-conventions-genai#291).
     attributes:
-      - id: agent.id
+      - id: gen_ai.agent.id
         type: string
         stability: experimental
         brief: Stable identifier for the agent instance.
         examples:
           - "agent-7f3a9c2e"
           - "did:web:agents.opena2a.org:agent123"
-      - id: agent.public_key.algorithm
+      - id: gen_ai.agent.public_key.algorithm
         type: string
         stability: experimental
-        brief: Cryptographic algorithm of the agent's identity keypair.
+        brief: Cryptographic algorithm identifier of the agent's identity keypair.
+        note: >
+          Case-sensitive algorithm identifier drawn from a consistent producer set spanning the
+          classical, post-quantum, and symmetric families (for example Ed25519, ML-DSA-44, ML-DSA-65,
+          ML-DSA-87, Falcon-512, Falcon-1024, SLH-DSA), aligned with the JSON Web Key registries
+          (RFC 7517 section 4.1). Verifier behaviour on an unrecognized identifier SHOULD be
+          fail-closed: treat the key as opaque and refuse to verify, never best-effort.
         examples:
           - "ed25519"
           - "ml-dsa-65"
-      - id: agent.capability
+      - id: gen_ai.agent.capability
         type: string
         stability: experimental
         brief: >
-          The capability the agent is attempting to invoke. Free-form string
-          matching the producer's capability namespace.
+          The capability the agent is attempting to invoke. Free-form string matching the
+          producer's capability namespace.
         examples:
           - "database.read"
           - "email.send"
           - "code.execute"
-      - id: agent.trust_score
+      - id: gen_ai.agent.trust.score
         type: double
         stability: experimental
         brief: >
-          Producer-emitted trust score at decision time. Range 0.0 to 1.0.
-          Producer-defined semantics. Not normative.
-      - id: agent.drift_score
-        type: double
-        stability: experimental
-        brief: >
-          Producer-emitted behavioral drift score at decision time. Range 0.0 to 1.0.
-          Producer-defined semantics. Not normative.
-      - id: agent.scan_verdict
+          Producer-emitted trust score at decision time, in the range 0.0 to 1.0. Producer-defined
+          semantics, not normative or cross-producer-comparable. When emitted it SHOULD be
+          accompanied by gen_ai.agent.trust.method.
+      - id: gen_ai.agent.trust.method
         type: string
         stability: experimental
         brief: >
-          Most recent producer-emitted security scan verdict for this agent.
-          Producer-defined provenance: the convention standardizes the attribute
-          name and the enum range, not which scanner produced the value or how
-          often it is refreshed. Producers documenting their scanning methodology
-          is recommended but not normative.
+          Opaque, producer-scoped token identifying the method and version that produced
+          gen_ai.agent.trust.score. Consumers compare it for equality only; a changed token signals
+          the scoring function moved (re-fit, re-threshold, new model), not the agent. Recommended
+          wherever the score is emitted.
+        examples:
+          - "trust-model@2.3.1"
+          - "rules-v7"
+      - id: gen_ai.agent.drift.score
+        type: double
+        stability: experimental
+        brief: >
+          Producer-emitted behavioural drift score at decision time, in the range 0.0 to 1.0.
+          Producer-defined semantics, not normative. When emitted it SHOULD be accompanied by
+          gen_ai.agent.drift.method.
+      - id: gen_ai.agent.drift.method
+        type: string
+        stability: experimental
+        brief: >
+          Opaque, producer-scoped token identifying the method and version that produced
+          gen_ai.agent.drift.score. Equality-compared by consumers; a changed token is a cue to
+          reset outcome correlation. Recommended wherever the score is emitted.
+        examples:
+          - "embedding-cosine@1.4"
+          - "kl-divergence-v2"
+      - id: gen_ai.agent.scan.verdict
+        type: string
+        stability: experimental
+        brief: >
+          Most recent producer-emitted security scan verdict for the agent. The convention
+          standardizes the attribute name and the recommended value set (clean, warnings, findings,
+          critical, unknown), not which scanner produced the value or how often it is refreshed.
+          When emitted it SHOULD be accompanied by gen_ai.agent.scan.method.
         examples:
           - "clean"
           - "warnings"
           - "findings"
           - "critical"
           - "unknown"
+      - id: gen_ai.agent.scan.method
+        type: string
+        stability: experimental
+        brief: >
+          Opaque, producer-scoped token identifying the scanner and version that produced
+          gen_ai.agent.scan.verdict. Equality-compared by consumers; a changed token signals the
+          scanning method moved, not the agent. Recommended wherever the verdict is emitted.
+        examples:
+          - "scanner@1.2.0"
+          - "policy-set-2026.06"
