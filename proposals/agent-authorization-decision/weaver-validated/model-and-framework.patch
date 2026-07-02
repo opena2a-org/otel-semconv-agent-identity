@@ -1,0 +1,300 @@
+diff --git a/model/gen-ai/metrics.yaml b/model/gen-ai/metrics.yaml
+index af54735..be8555e 100644
+--- a/model/gen-ai/metrics.yaml
++++ b/model/gen-ai/metrics.yaml
+@@ -18,6 +18,34 @@ attribute_groups:
+       - ref: openai.response.system_fingerprint
+         requirement_level: recommended
+ metrics:
++  - name: gen_ai.agent.authorization.decisions
++    instrument: counter
++    unit: "{decision}"
++    brief: >
++      Number of agent authorization/governance decisions, one increment per decision, keyed on the
++      decision outcome.
++    note: >
++      One counter with an `outcome` attribute is preferred over one counter per outcome.
++    stability: development
++    annotations:
++      code_generation:
++        metric_value_type: int
++    attributes:
++      - ref: gen_ai.agent.authorization.outcome
++        requirement_level: required
++      - ref: gen_ai.agent.authorization.policy
++        requirement_level: recommended
++  - name: gen_ai.agent.authorization.duration
++    instrument: histogram
++    unit: "s"
++    brief: 'Duration of an agent authorization/governance decision.'
++    stability: development
++    annotations:
++      code_generation:
++        metric_value_type: double
++    attributes:
++      - ref: gen_ai.agent.authorization.outcome
++        requirement_level: required
+   - name: gen_ai.client.token.usage
+     instrument: histogram
+     unit: "{token}"
+diff --git a/model/gen-ai/registry.yaml b/model/gen-ai/registry.yaml
+index 881c8cc..6cacc17 100644
+--- a/model/gen-ai/registry.yaml
++++ b/model/gen-ai/registry.yaml
+@@ -395,6 +395,53 @@ attributes:
+       agent. Recommended wherever `gen_ai.agent.scan.verdict` is emitted.
+     examples: ["scanner@1.2.0", "policy-set-2026.06"]
+     stability: development
++  - key: gen_ai.agent.authorization.outcome
++    type:
++      members:
++        - id: allow
++          value: "allow"
++          brief: The action was permitted; a child execute span is expected beneath this decision.
++          stability: development
++        - id: deny
++          value: "deny"
++          brief: The action was refused; no child execute span is emitted beneath this decision.
++          stability: development
++        - id: warn
++          value: "warn"
++          brief: The action was permitted but flagged for review.
++          stability: development
++        - id: escalate
++          value: "escalate"
++          brief: The decision was deferred to a higher authority (for example a human in the loop).
++          stability: development
++        - id: transform
++          value: "transform"
++          brief: The action was permitted after the request was modified (for example redaction).
++          stability: development
++        - id: error
++          value: "error"
++          brief: The decision could not be evaluated; see `error.type`.
++          stability: development
++    brief: >
++      Terminal outcome of an agent authorization/governance decision. Present if and only if a
++      decision was evaluated; the absence of a decision span (nothing was in the reachable surface,
++      so nothing was attempted) is not represented by an enum value. A `deny` is emitted as a present
++      span with no child execute span beneath it, which keeps a denial auditable after the fact.
++    stability: development
++  - key: gen_ai.agent.authorization.policy
++    type: string
++    brief: >
++      Identifier of the policy, ruleset, or engine that produced the decision. Opaque; compared for
++      equality only.
++    examples: ["aim/fga", "agent_control_specification", "policy-set:prod-v7"]
++    stability: development
++  - key: gen_ai.agent.authorization.reason
++    type: string
++    brief: >
++      Producer-defined reason code for a non-`allow` outcome. Low-cardinality; identifies which check
++      resolved the decision, not a free-text message.
++    examples: ["capability_denied", "context_denied", "chain_denied", "intent_denied"]
++    stability: development
+   - key: gen_ai.tool.name
+     type: string
+     brief: Name of the tool utilized by the agent.
+@@ -557,6 +604,10 @@ attributes:
+           value: "plan"
+           brief: 'Agent planning or task decomposition phase'
+           stability: development
++        - id: execute_authorization
++          value: "execute_authorization"
++          brief: 'Agent authorization/governance decision made by a policy decision point'
++          stability: development
+         - id: search_memory
+           value: "search_memory"
+           brief: 'Search/query memories from a memory store'
+diff --git a/model/gen-ai/spans.yaml b/model/gen-ai/spans.yaml
+index ebbdcb6..08d7284 100644
+--- a/model/gen-ai/spans.yaml
++++ b/model/gen-ai/spans.yaml
+@@ -153,6 +153,19 @@ attribute_groups:
+     attributes:
+       - ref_group: attributes.gen_ai.invoke_agent.common
+       - ref_group: attributes.gen_ai.address_and_port
++  - id: attributes.gen_ai.execute_authorization.common
++    visibility: internal
++    attributes:
++      - ref: gen_ai.agent.authorization.outcome
++        requirement_level: required
++      - ref: gen_ai.agent.authorization.policy
++        requirement_level: recommended
++      - ref: gen_ai.agent.authorization.reason
++        requirement_level:
++          conditionally_required: When `gen_ai.agent.authorization.outcome` is not `allow`.
++      - ref: gen_ai.agent.capability
++        requirement_level: recommended
++
+ spans:
+   - type: gen_ai.inference.client
+     kind: client
+@@ -551,6 +564,59 @@ spans:
+       - ref: gen_ai.tool.call.result
+         requirement_level: opt_in
+ 
++  - type: gen_ai.execute_authorization.internal
++    kind: internal
++    name:
++      note: >
++        **Span name** SHOULD be `execute_authorization {gen_ai.agent.capability}`
++        (or `execute_authorization` when no capability is available).
++    brief: Describes one agent authorization/governance decision.
++    note: |
++      `gen_ai.operation.name` SHOULD be `execute_authorization`.
++
++      This span represents a single decision made by the deciding component (a policy decision
++      point, agent gateway, or governance layer in front of an agent action). It is NOT emitted by
++      agent-level or model-call instrumentation, which does not have access to the trust / risk /
++      scan inputs or the authority basis the decision is measured against.
++
++      Structural invariants:
++
++      1. A `gen_ai.execute_authorization` span is present if and only if the gate actually evaluated
++         a decision. If nothing was in the reachable surface, there is no decision and no span; that
++         case is the absence of the operation, not an `outcome` value.
++      2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`) is present if and only
++         if the decision permitted execution (`outcome` = `allow` / `warn` / `transform`).
++      3. A denied decision (`outcome` = `deny`) is emitted as a present span with no child execute
++         span beneath it.
++
++      The signal attributes (`gen_ai.agent.trust.*`, `drift.*`, `scan.*`, `public_key.algorithm`)
++      are optional producer-specific enrichment on this span, not part of the operation's required
++      shape.
++    stability: development
++    attributes:
++      - ref_group: attributes.gen_ai.error
++      - ref_group: attributes.gen_ai.execute_authorization.common
++      - ref: gen_ai.operation.name
++        requirement_level: required
++        sampling_relevant: true
++      - ref: gen_ai.agent.public_key.algorithm
++        requirement_level: opt_in
++      - ref: gen_ai.agent.trust.score
++        requirement_level: opt_in
++      - ref: gen_ai.agent.trust.method
++        requirement_level:
++          recommended: if `gen_ai.agent.trust.score` is set
++      - ref: gen_ai.agent.drift.score
++        requirement_level: opt_in
++      - ref: gen_ai.agent.drift.method
++        requirement_level:
++          recommended: if `gen_ai.agent.drift.score` is set
++      - ref: gen_ai.agent.scan.verdict
++        requirement_level: opt_in
++      - ref: gen_ai.agent.scan.method
++        requirement_level:
++          recommended: if `gen_ai.agent.scan.verdict` is set
++
+   - type: gen_ai.invoke_workflow.internal
+     kind: internal
+     name:
+diff --git a/reference/README.md b/reference/README.md
+index a447b83..c029464 100644
+--- a/reference/README.md
++++ b/reference/README.md
+@@ -33,7 +33,8 @@ Run `uv run update-reports` to regenerate.
+ | [Embeddings](reports/embeddings-span.md) | aws-bedrock, azure-ai-inference, azure-openai, cohere, google-genai, litellm, llamaindex, mistralai, openai |
+ | [Retrieval](reports/retrieval-span.md) | haystack, langchain, llamaindex |
+ | [Memory](reports/memory-span.md) | aws-bedrock-agentcore, google-adk |
+-| [Execute Tool](reports/execute-tool-span.md) | autogen, crewai, google-adk, groq, instructor, litellm, llamaindex, mistralai, openai, openai-agents, openai-assistants, pydantic-ai |
++| [Execute Tool](reports/execute-tool-span.md) | agent-authorization-decision, autogen, crewai, google-adk, groq, instructor, litellm, llamaindex, mistralai, openai, openai-agents, openai-assistants, pydantic-ai |
++| [Execute Authorization](reports/execute-authorization-span.md) | agent-authorization-decision |
+ 
+ ### Events
+ 
+diff --git a/reference/reports/execute-authorization-span.md b/reference/reports/execute-authorization-span.md
+new file mode 100644
+index 0000000..4ccdeb1
+--- /dev/null
++++ b/reference/reports/execute-authorization-span.md
+@@ -0,0 +1,35 @@
++# Execute Authorization Span
++
++## Required
++
++| Attribute | Supporting Libraries |
++| --- | --- |
++| gen_ai.agent.authorization.outcome | [agent-authorization-decision] |
++| gen_ai.operation.name | [agent-authorization-decision] |
++
++## Conditionally Required
++
++| Attribute | Supporting Libraries |
++| --- | --- |
++| gen_ai.agent.authorization.reason | [agent-authorization-decision] |
++
++## Recommended
++
++| Attribute | Supporting Libraries |
++| --- | --- |
++| gen_ai.agent.authorization.policy | [agent-authorization-decision] |
++| gen_ai.agent.capability | [agent-authorization-decision] |
++| gen_ai.agent.drift.method | [agent-authorization-decision] |
++| gen_ai.agent.scan.method | [agent-authorization-decision] |
++| gen_ai.agent.trust.method | [agent-authorization-decision] |
++
++## Opt-In
++
++| Attribute | Supporting Libraries |
++| --- | --- |
++| gen_ai.agent.drift.score | [agent-authorization-decision] |
++| gen_ai.agent.public_key.algorithm | [agent-authorization-decision] |
++| gen_ai.agent.scan.verdict | [agent-authorization-decision] |
++| gen_ai.agent.trust.score | [agent-authorization-decision] |
++
++[agent-authorization-decision]: ../scenarios/agent-authorization-decision/scenario.py
+diff --git a/reference/reports/execute-tool-span.md b/reference/reports/execute-tool-span.md
+index 0298f07..7c0e42d 100644
+--- a/reference/reports/execute-tool-span.md
++++ b/reference/reports/execute-tool-span.md
+@@ -6,8 +6,8 @@
+ 
+ | Attribute | Supporting Libraries |
+ | --- | --- |
+-| gen_ai.operation.name | [autogen], [crewai], [google-adk], [groq], [instructor], [litellm], [llamaindex], [mistralai], [openai], [openai-agents], [openai-assistants], [pydantic-ai] |
+-| gen_ai.tool.name | [autogen], [crewai], [google-adk], [groq], [instructor], [litellm], [llamaindex], [mistralai], [openai], [openai-agents], [openai-assistants], [pydantic-ai] |
++| gen_ai.operation.name | [agent-authorization-decision], [autogen], [crewai], [google-adk], [groq], [instructor], [litellm], [llamaindex], [mistralai], [openai], [openai-agents], [openai-assistants], [pydantic-ai] |
++| gen_ai.tool.name | [agent-authorization-decision], [autogen], [crewai], [google-adk], [groq], [instructor], [litellm], [llamaindex], [mistralai], [openai], [openai-agents], [openai-assistants], [pydantic-ai] |
+ 
+ ## Recommended
+ 
+@@ -24,6 +24,7 @@
+ | gen_ai.tool.call.arguments | [autogen], [crewai], [google-adk], [groq], [instructor], [litellm], [llamaindex], [mistralai], [openai], [openai-agents], [openai-assistants], [pydantic-ai] |
+ | gen_ai.tool.call.result | [autogen], [crewai], [google-adk], [groq], [instructor], [litellm], [llamaindex], [mistralai], [openai], [openai-agents], [openai-assistants], [pydantic-ai] |
+ 
++[agent-authorization-decision]: ../scenarios/agent-authorization-decision/scenario.py
+ [autogen]: ../scenarios/autogen/scenario.py
+ [crewai]: ../scenarios/crewai/scenario.py
+ [google-adk]: ../scenarios/google-adk/scenario.py
+diff --git a/reference/src/semconv_genai/data_files.py b/reference/src/semconv_genai/data_files.py
+index cafa43b..615a221 100644
+--- a/reference/src/semconv_genai/data_files.py
++++ b/reference/src/semconv_genai/data_files.py
+@@ -44,6 +44,7 @@ SPAN_TYPE_ORDER = [
+     "retrieval",
+     "memory",
+     "execute_tool",
++    "execute_authorization",
+ ]
+ 
+ # Display order for event types in reports.
+diff --git a/reference/src/semconv_genai/semconv_model.py b/reference/src/semconv_genai/semconv_model.py
+index ce87ce7..4b467fe 100644
+--- a/reference/src/semconv_genai/semconv_model.py
++++ b/reference/src/semconv_genai/semconv_model.py
+@@ -164,6 +164,13 @@ SPAN_SPECS: dict[str, AttributeSpec] = {
+             }
+         ),
+     ),
++    "execute_authorization": _from_yaml(
++        _groups,
++        "span.gen_ai.execute_authorization.internal",
++        label="Execute Authorization",
++        op_names=frozenset({"execute_authorization"}),
++        discriminator_attrs=frozenset({"gen_ai.agent.authorization.outcome"}),
++    ),
+     "create_agent": _from_yaml(
+         _groups,
+         "span.gen_ai.create_agent.client",

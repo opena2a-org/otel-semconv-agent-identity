@@ -1,0 +1,22 @@
+{
+  "spans": {
+    "execute_tool": [
+      "gen_ai.operation.name",
+      "gen_ai.tool.name"
+    ],
+    "execute_authorization": [
+      "gen_ai.agent.authorization.outcome",
+      "gen_ai.agent.authorization.policy",
+      "gen_ai.agent.authorization.reason",
+      "gen_ai.agent.capability",
+      "gen_ai.agent.drift.method",
+      "gen_ai.agent.drift.score",
+      "gen_ai.agent.public_key.algorithm",
+      "gen_ai.agent.scan.method",
+      "gen_ai.agent.scan.verdict",
+      "gen_ai.agent.trust.method",
+      "gen_ai.agent.trust.score",
+      "gen_ai.operation.name"
+    ]
+  }
+}

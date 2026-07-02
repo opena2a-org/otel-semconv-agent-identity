@@ -44,6 +44,8 @@ Run: `python validate.py` (any env with `opentelemetry-sdk`).
 ## TODO before upstream submission
 
 - [x] Prove the invariants with a runnable scenario (`validate.py`).
-- [ ] Wire `scenario.py` to the actual Weaver live-check (mirror #291's passing scenario).
+- [x] Wire a real scenario to the actual Weaver live-check — **done 2026-07-02, exit 0, 0 advice.**
+      See `../weaver-validated/` for the model+framework patch, the runnable scenario, and the
+      generated coverage report.
 - [ ] Regenerate the reference report tables.
 - [ ] Confirm span kind (`internal` vs `server`) with maintainers before wiring the group.
