@@ -1,0 +1,79 @@
+file_format: definition/2
+# Proposal fragment — the decision operation as a span.
+# Follows the gen_ai.execute_tool.internal pattern (a non-inference operation
+# emitted by application/infra code, not by model-call instrumentation).
+
+attribute_groups:
+  - id: attributes.gen_ai.execute_authorization.common
+    visibility: internal
+    attributes:
+      - ref: gen_ai.agent.authorization.outcome
+        requirement_level: required
+        sampling_relevant: true
+      - ref: gen_ai.agent.authorization.policy
+        requirement_level: recommended
+      - ref: gen_ai.agent.authorization.reason
+        requirement_level:
+          conditionally_required: When `gen_ai.agent.authorization.outcome` is not `allow`.
+      - ref: gen_ai.agent.capability
+        requirement_level: recommended
+
+spans:
+  - type: gen_ai.execute_authorization.internal
+    kind: internal
+    name:
+      note: >
+        **Span name** SHOULD be `execute_authorization {gen_ai.agent.capability}`
+        (or `execute_authorization` when no capability is available).
+    brief: Describes one agent authorization/governance decision.
+    note: |
+      `gen_ai.operation.name` SHOULD be `execute_authorization`.
+
+      This span represents a single decision made by the deciding component (a policy
+      decision point, agent gateway, or governance layer in front of an agent action).
+      It is NOT emitted by agent-level or model-call instrumentation, which does not
+      have access to the trust/risk/scan inputs or the authority basis the decision is
+      measured against.
+
+      **Structural invariants** (these make a denial auditable after the fact and keep
+      "denied" distinguishable from "never attempted"):
+
+      1. A `gen_ai.execute_authorization` span is present **if and only if** the gate
+         actually evaluated a decision. If nothing was in the reachable surface — no
+         attempt, because there was nothing to attempt — there is no decision and no
+         span. That case is the absence of the operation, not an `outcome` value.
+      2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`, …) is
+         present **if and only if** the decision permitted execution
+         (`outcome` = `allow` / `warn` / `transform`).
+      3. A denied decision (`outcome` = `deny`) is emitted as a present span with **no**
+         child execute span beneath it. A gate that blocks a call and emits nothing is
+         indistinguishable downstream from a call that never happened.
+
+      The signal attributes (`gen_ai.agent.trust.*`, `drift.*`, `scan.*`,
+      `public_key.algorithm`) are OPTIONAL producer-specific enrichment on this span,
+      not part of the operation's required shape.
+    stability: development
+    attributes:
+      - ref_group: attributes.gen_ai.error
+      - ref_group: attributes.gen_ai.execute_authorization.common
+      - ref: gen_ai.operation.name
+        requirement_level: required
+        sampling_relevant: true
+      # --- OPTIONAL signal enrichment (opt_in; only producers that compute them) ---
+      - ref: gen_ai.agent.public_key.algorithm
+        requirement_level: opt_in
+      - ref: gen_ai.agent.trust.score
+        requirement_level: opt_in
+      - ref: gen_ai.agent.trust.method
+        requirement_level:
+          conditionally_required: When `gen_ai.agent.trust.score` is set.
+      - ref: gen_ai.agent.drift.score
+        requirement_level: opt_in
+      - ref: gen_ai.agent.drift.method
+        requirement_level:
+          conditionally_required: When `gen_ai.agent.drift.score` is set.
+      - ref: gen_ai.agent.scan.verdict
+        requirement_level: opt_in
+      - ref: gen_ai.agent.scan.method
+        requirement_level:
+          conditionally_required: When `gen_ai.agent.scan.verdict` is set.

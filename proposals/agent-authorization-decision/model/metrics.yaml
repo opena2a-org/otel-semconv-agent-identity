@@ -1,0 +1,50 @@
+file_format: definition/2
+# Proposal fragment — the decision operation as metrics.
+# Collapses AGT's one-counter-per-outcome (acs_intervention_{allow,deny,...}_total)
+# into a single counter keyed on the `outcome` attribute, the OTel-preferred shape.
+# AIM already emits this shape (fga.decisions + fga.outcome attr).
+
+attribute_groups:
+  - id: metric_attributes.gen_ai.agent.authorization
+    visibility: internal
+    attributes:
+      - ref: gen_ai.agent.authorization.outcome
+        requirement_level: required
+      - ref: gen_ai.agent.authorization.policy
+        requirement_level: recommended
+
+metrics:
+  - name: gen_ai.agent.authorization.decisions
+    instrument: counter
+    unit: "{decision}"
+    brief: >
+      Number of agent authorization/governance decisions, one increment per decision,
+      keyed on the decision outcome.
+    note: >
+      One counter with an `outcome` attribute is preferred over one counter per outcome
+      (for example AGT's `acs_intervention_{allow,deny,warn,escalate,transform}_total`),
+      which this convention would have such producers collapse.
+    stability: development
+    annotations:
+      code_generation:
+        metric_value_type: int
+    attributes:
+      - ref_group: metric_attributes.gen_ai.agent.authorization
+      - ref_group: attributes.gen_ai.error
+
+  - name: gen_ai.agent.authorization.duration
+    instrument: histogram
+    unit: "s"
+    brief: 'Duration of an agent authorization/governance decision.'
+    note: >
+      Unit is seconds per OTel duration convention. Both current producers emit
+      milliseconds today (AIM `fga.latency_ms`, AGT `acs_intervention_duration_ms`);
+      converging on seconds is a reconciliation point for adoption, not a signal both
+      already match.
+    stability: development
+    annotations:
+      code_generation:
+        metric_value_type: double
+    attributes:
+      - ref_group: metric_attributes.gen_ai.agent.authorization
+      - ref_group: attributes.gen_ai.error

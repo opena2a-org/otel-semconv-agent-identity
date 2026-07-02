@@ -1,0 +1,35 @@
+# Reference scenarios — decision operation
+
+OTel SemConv requires a reference scenario showing which instrumentation captures the
+attributes and how (CONTRIBUTING.md §4). Two real producers back this proposal.
+
+## AIM (shared, public, shipped)
+
+`agent-identity-management/apps/backend/deployments/otel-demo/` — a runnable
+collector → Tempo / Prometheus / Loki → Grafana stack. The FGA engine (the PDP) emits:
+
+- the `fga.authorize` decision span (with the optional `gen_ai.agent.*` signal attrs),
+- the `fga.decisions` counter (`fga.outcome` attribute),
+- the `fga.latency_ms` histogram.
+
+The decision object (`FGAResult`) is returned by `FGAEngine.Authorize()`; the span
+attributes are set from that returned decision, not from literals. This is the "real
+shared public component" the maintainer asked for on #291.
+
+`scenario.py` in this directory is a minimal, self-contained port of that emission for
+the SemConv reference-report tooling — a gate whose `decide()` returns a decision object,
+with the span set from the returned decision. It intentionally mirrors the upstream
+reference-scenario shape (see `reference/scenarios/agent-authorization` on #291).
+
+## AGT (independent second producer)
+
+`microsoft/agent-governance-toolkit` [#3190](https://github.com/microsoft/agent-governance-toolkit/pull/3190)
+(merged) emits the same decision as `acs_intervention_*` metrics across its Python / Rust
+/ Node / .NET SDKs. Not portable into this repo, but the second independent producer that
+makes the operation cross-producer rather than solo. Coordinate on-thread.
+
+## TODO before upstream submission
+
+- [ ] Finish `scenario.py` against the actual Weaver live-check (mirror #291's passing scenario).
+- [ ] Regenerate the reference report tables.
+- [ ] Confirm span kind (`internal` vs `server`) with maintainers before wiring the group.

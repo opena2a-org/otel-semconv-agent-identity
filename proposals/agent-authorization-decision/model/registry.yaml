@@ -1,0 +1,148 @@
+file_format: definition/2
+# Proposal fragment — NOT yet an upstream PR.
+# Models the agent authorization/governance DECISION as an instrumented operation,
+# per the OTel SemConv GenAI maintainer direction on #291 ("model operations, not
+# attributes stamped on agent spans"). Two independent producers exist today:
+# AIM (fga.authorize span + fga.decisions counter + fga.latency_ms histogram) and
+# Microsoft AGT (#3190, acs_intervention_* metrics). See ../producer-mapping.md.
+
+groups:
+  # --- addition to the existing gen_ai.operation.name enum -------------------
+  # (upstream this is a member added to the enum in model/gen-ai/registry.yaml,
+  # not a standalone group; shown here as a fragment for review)
+  - id: registry.gen_ai.operation.name.authorization
+    type: attribute_group
+    display_name: "gen_ai.operation.name — proposed member"
+    brief: >
+      Proposed new member of the existing `gen_ai.operation.name` enum.
+    attributes:
+      - id: gen_ai.operation.name.execute_authorization
+        type: string
+        stability: experimental
+        brief: >
+          `execute_authorization` — one agent authorization/governance decision made by
+          a policy decision point (PDP), agent gateway, or governance layer sitting in
+          front of an agent action. This operation is emitted by the deciding component,
+          not by agent-level instrumentation, which does not have the trust/risk/scan
+          inputs. It is the unit the decision counter and duration histogram key on.
+        examples:
+          - "execute_authorization"
+
+  # --- decision attributes ---------------------------------------------------
+  - id: registry.gen_ai.agent.authorization
+    type: attribute_group
+    display_name: Agent Authorization Decision Attributes
+    brief: >
+      Attributes describing a single agent authorization/governance decision.
+      Emitted by the deciding component (PDP / gateway / governance layer).
+    attributes:
+      - id: gen_ai.agent.authorization.outcome
+        stability: experimental
+        brief: >
+          The terminal outcome of the authorization decision. This attribute is present
+          if and only if a decision was actually evaluated; the absence of a decision
+          span (nothing was in the reachable surface, so nothing was attempted) is NOT
+          represented by an enum value. A `deny` decision is still emitted as a present
+          span with no child execute span beneath it, which is what keeps a denial
+          auditable after the fact.
+        type:
+          members:
+            - id: allow
+              value: "allow"
+              brief: The action was permitted; a child execute span is expected beneath this decision.
+              stability: experimental
+            - id: deny
+              value: "deny"
+              brief: The action was refused; no child execute span is emitted beneath this decision.
+              stability: experimental
+            - id: warn
+              value: "warn"
+              brief: The action was permitted but flagged for review.
+              stability: experimental
+            - id: escalate
+              value: "escalate"
+              brief: The decision was deferred to a higher authority (for example a human-in-the-loop).
+              stability: experimental
+            - id: transform
+              value: "transform"
+              brief: The action was permitted after the request was modified (for example redaction).
+              stability: experimental
+            - id: error
+              value: "error"
+              brief: The decision could not be evaluated; see `error.type`.
+              stability: experimental
+      - id: gen_ai.agent.authorization.policy
+        type: string
+        stability: experimental
+        brief: >
+          Identifier of the policy, ruleset, or engine that produced the decision.
+          Opaque; compared for equality only. Lets a consumer attribute a decision to
+          the governing policy without parsing its internals.
+        examples:
+          - "aim/fga"
+          - "agent_control_specification"
+          - "policy-set:prod-v7"
+      - id: gen_ai.agent.authorization.reason
+        type: string
+        stability: experimental
+        brief: >
+          Producer-defined reason code for a non-`allow` outcome. Low-cardinality;
+          identifies which check resolved the decision, not a free-text message.
+        examples:
+          - "capability_denied"
+          - "context_denied"
+          - "chain_denied"
+          - "intent_denied"
+          - "attribute_denied"
+
+  # --- OPTIONAL signal enrichment (producer-specific, not core to the operation)
+  # These are the existing gen_ai.agent.* signals from #291. They are OPTIONAL
+  # enrichment on the decision span for producers that compute them (AIM does;
+  # AGT does not). They are NOT part of the operation's required shape.
+  - id: registry.gen_ai.agent.signals
+    type: attribute_group
+    display_name: Agent Decision Signal Attributes (optional enrichment)
+    brief: >
+      Producer-emitted decision inputs. Optional enrichment on the decision span.
+    attributes:
+      - id: gen_ai.agent.capability
+        type: string
+        stability: experimental
+        brief: The capability the agent was attempting to invoke, as presented to the gate.
+        examples: ["database.read", "email.send", "code.execute"]
+      - id: gen_ai.agent.public_key.algorithm
+        type: string
+        stability: experimental
+        brief: Cryptographic algorithm of the agent's identity keypair.
+        examples: ["ed25519", "ml-dsa-65", "ed25519+ml-dsa-65"]
+      - id: gen_ai.agent.trust.score
+        type: double
+        stability: experimental
+        brief: Producer-emitted trust score at decision time. 0.0-1.0. Producer-defined semantics.
+      - id: gen_ai.agent.trust.method
+        type: string
+        stability: experimental
+        brief: >
+          Opaque producer label identifying the method/epoch that produced `trust.score`.
+          Compared for equality only; consumers MUST NOT parse its substructure. Recommended
+          wherever `trust.score` is emitted so a consumer can tell a re-fit from a real move.
+        examples: ["aim/trust-calculator"]
+      - id: gen_ai.agent.drift.score
+        type: double
+        stability: experimental
+        brief: Producer-emitted behavioral drift score at decision time. 0.0-1.0.
+      - id: gen_ai.agent.drift.method
+        type: string
+        stability: experimental
+        brief: Opaque producer label for the method that produced `drift.score`. Equality-only.
+        examples: ["aim/drift-capability-diff"]
+      - id: gen_ai.agent.scan.verdict
+        type: string
+        stability: experimental
+        brief: Most recent producer-emitted security scan verdict for this agent.
+        examples: ["clean", "warnings", "findings", "critical", "unknown"]
+      - id: gen_ai.agent.scan.method
+        type: string
+        stability: experimental
+        brief: Opaque producer label for the scanner/provenance of `scan.verdict`. Equality-only.
+        examples: ["aim/registry-asc"]
