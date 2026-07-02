@@ -28,8 +28,22 @@ reference-scenario shape (see `reference/scenarios/agent-authorization` on #291)
 / Node / .NET SDKs. Not portable into this repo, but the second independent producer that
 makes the operation cross-producer rather than solo. Coordinate on-thread.
 
+## Validation
+
+`validate.py` runs `scenario.py` through an in-memory span exporter and asserts the three
+structural invariants. Verified 2026-07-02:
+
+```
+deny  -> decision spans=1 execute spans=0  outcome=deny
+allow -> decision spans=1 execute spans=1  outcome=allow
+OK: invariants 1-3 hold for deny and allow.
+```
+
+Run: `python validate.py` (any env with `opentelemetry-sdk`).
+
 ## TODO before upstream submission
 
-- [ ] Finish `scenario.py` against the actual Weaver live-check (mirror #291's passing scenario).
+- [x] Prove the invariants with a runnable scenario (`validate.py`).
+- [ ] Wire `scenario.py` to the actual Weaver live-check (mirror #291's passing scenario).
 - [ ] Regenerate the reference report tables.
 - [ ] Confirm span kind (`internal` vs `server`) with maintainers before wiring the group.
