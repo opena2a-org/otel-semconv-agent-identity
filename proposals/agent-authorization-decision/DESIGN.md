@@ -87,11 +87,29 @@ per-producer table. Summary:
 
 ## Open questions for maintainers
 
-- Update #291 in place, or open a fresh issue for the operation? (asked on-thread; the
-  content is the same either way.)
+- ~~Update #291 in place, or open a fresh issue for the operation?~~ **Answered on our
+  side 2026-08-06.** Asked on-thread twice (2026-07-02, 2026-07-13) and unanswered for
+  five weeks, so a default was stated rather than asking a third time: open a fresh issue
+  for the operation and treat #291 as superseded, unless a maintainer redirects. See
+  [comment 5204165524](https://github.com/open-telemetry/semantic-conventions-genai/pull/291#issuecomment-5204165524).
+  The issue body is drafted and held in `ISSUE-DRAFT.md`; review on or after 2026-08-13.
 - Span kind: `internal` (matches `execute_tool`) vs `server` for a standalone PDP service.
 - Whether the optional signal attributes belong in this proposal at all, or should be a
   separate follow-up once the operation lands.
+
+## Why the eight attributes are not being pushed for merge
+
+The bar the maintainer set is a real shared public component emitting the thing being
+standardized. Applied honestly to what is verifiable today:
+
+- The **decision operation** has **two** independent producers (AIM and AGT). Clears it.
+- The **eight signal attributes** have **one** (AIM, `agent-identity-management#324`).
+  AGT emits none of them. Does not clear it.
+
+So the operation is what gets proposed, and the attributes come back later as optional
+enrichment carried by whichever producers actually have them. Arguing for the attributes
+on the strength of a single producer, after conceding the bar, would read as moving the
+goalposts.
 
 ## Provenance
 
