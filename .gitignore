@@ -9,3 +9,13 @@ node_modules/
 *.log
 .idea/
 .vscode/
+
+# Credential material: nothing here today, so that a future one is never
+# committed by accident into a public repo.
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.json
+.env.local
+.env.*.local
