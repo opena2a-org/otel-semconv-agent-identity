@@ -1,5 +1,5 @@
 file_format: definition/2
-# Proposal fragment — the decision operation as a span.
+# Proposal fragment: the decision operation as a span.
 # Follows the gen_ai.execute_tool.internal pattern (a non-inference operation
 # emitted by application/infra code, not by model-call instrumentation).
 
@@ -44,9 +44,9 @@ spans:
       "denied" distinguishable from "never attempted"):
 
       1. A `gen_ai.execute_authorization` span is present **if and only if** the gate
-         actually evaluated a decision. If nothing was in the reachable surface — no
-         attempt, because there was nothing to attempt — there is no decision and no
-         span. That case is the absence of the operation, not an `outcome` value.
+         actually evaluated a decision. If nothing was in the reachable surface then there
+         was nothing to attempt, so there is no decision and no span. That case is the
+         absence of the operation, not an `outcome` value.
       2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`, …) is
          present **if and only if** the decision permitted execution
          (`outcome` = `allow` / `warn` / `transform`).

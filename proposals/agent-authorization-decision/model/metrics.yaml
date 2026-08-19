@@ -1,5 +1,5 @@
 file_format: definition/2
-# Proposal fragment — the decision operation as metrics.
+# Proposal fragment: the decision operation as metrics.
 # Collapses AGT's one-counter-per-outcome (acs_intervention_{allow,deny,...}_total)
 # into a single counter keyed on the `outcome` attribute, the OTel-preferred shape.
 # AIM already emits this shape (fga.decisions + fga.outcome attr).

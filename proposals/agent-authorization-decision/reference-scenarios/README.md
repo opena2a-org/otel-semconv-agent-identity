@@ -1,11 +1,11 @@
-# Reference scenarios — decision operation
+# Reference scenarios: decision operation
 
 OTel SemConv requires a reference scenario showing which instrumentation captures the
 attributes and how (CONTRIBUTING.md §4). Two real producers back this proposal.
 
 ## AIM (shared, public, shipped)
 
-`agent-identity-management/apps/backend/deployments/otel-demo/` — a runnable
+`agent-identity-management/apps/backend/deployments/otel-demo/`, a runnable
 collector → Tempo / Prometheus / Loki → Grafana stack. The FGA engine (the PDP) emits:
 
 - the `fga.authorize` decision span (with the optional `gen_ai.agent.*` signal attrs),
@@ -17,7 +17,7 @@ attributes are set from that returned decision, not from literals. This is the "
 shared public component" the maintainer asked for on #291.
 
 `scenario.py` in this directory is a minimal, self-contained port of that emission for
-the SemConv reference-report tooling — a gate whose `decide()` returns a decision object,
+the SemConv reference-report tooling: a gate whose `decide()` returns a decision object,
 with the span set from the returned decision. It intentionally mirrors the upstream
 reference-scenario shape (see `reference/scenarios/agent-authorization` on #291).
 
@@ -44,7 +44,7 @@ Run: `python validate.py` (any env with `opentelemetry-sdk`).
 ## TODO before upstream submission
 
 - [x] Prove the invariants with a runnable scenario (`validate.py`).
-- [x] Wire a real scenario to the actual Weaver live-check — **done 2026-07-02, exit 0, 0 advice.**
+- [x] Wire a real scenario to the actual Weaver live-check. **Done 2026-07-02, exit 0, 0 advice.**
       See `../weaver-validated/` for the model+framework patch, the runnable scenario, and the
       generated coverage report.
 - [ ] Regenerate the reference report tables.

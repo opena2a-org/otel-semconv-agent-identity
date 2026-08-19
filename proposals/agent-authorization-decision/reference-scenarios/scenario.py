@@ -1,4 +1,4 @@
-"""Reference scenario (stub) — the agent authorization decision operation.
+"""Reference scenario (stub): the agent authorization decision operation.
 
 Models the deciding component (a PDP / gate) as a `decide()` that returns a decision
 object, and sets the `gen_ai.execute_authorization` span attributes FROM that returned

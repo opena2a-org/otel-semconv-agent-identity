@@ -81,18 +81,18 @@ Carried in from the #461 thread, 2026-08-19:
 
 ## Contents
 
-- `model-and-framework.patch` — the model + framework diff, applies to `ca93747`:
-  - `model/gen-ai/registry.yaml` — `execute_authorization` enum member, the authorization
+- `model-and-framework.patch`, the model + framework diff, applies to `ca93747`:
+  - `model/gen-ai/registry.yaml`: `execute_authorization` enum member, the authorization
     attributes, `public_key.verification`.
-  - `model/gen-ai/spans.yaml` — `gen_ai.execute_authorization.internal` (invariants + scope in
+  - `model/gen-ai/spans.yaml`: `gen_ai.execute_authorization.internal` (invariants + scope in
     the note).
-  - `model/gen-ai/metrics.yaml` — `gen_ai.agent.authorization.{decisions,duration}`.
-  - `reference/src/semconv_genai/{semconv_model.py,data_files.py}` — register the span type.
-  - `docs/registry/**`, `reference/reports/**`, `reference/README.md` — regenerated outputs.
-- `scenario/` — the runnable reference scenario (`scenario.py`, `conformance.yaml`,
+  - `model/gen-ai/metrics.yaml`: `gen_ai.agent.authorization.{decisions,duration}`.
+  - `reference/src/semconv_genai/{semconv_model.py,data_files.py}`: register the span type.
+  - `docs/registry/**`, `reference/reports/**`, `reference/README.md`: regenerated outputs.
+- `scenario/`, the runnable reference scenario (`scenario.py`, `conformance.yaml`,
   `pyproject.toml`, `uv.lock`, `data.json`). Drop under
   `reference/scenarios/agent-authorization-decision/`.
-- `execute-authorization-span.md` — the generated coverage report.
+- `execute-authorization-span.md`, the generated coverage report.
 
 ## To reproduce
 

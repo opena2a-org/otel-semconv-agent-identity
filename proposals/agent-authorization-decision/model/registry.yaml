@@ -1,5 +1,5 @@
 file_format: definition/2
-# Proposal fragment — NOT yet an upstream PR.
+# Proposal fragment: NOT yet an upstream PR.
 # Models the agent authorization/governance DECISION as an instrumented operation,
 # per the OTel SemConv GenAI maintainer direction on #291 ("model operations, not
 # attributes stamped on agent spans"). Two independent producers exist today:
@@ -12,7 +12,7 @@ groups:
   # not a standalone group; shown here as a fragment for review)
   - id: registry.gen_ai.operation.name.authorization
     type: attribute_group
-    display_name: "gen_ai.operation.name — proposed member"
+    display_name: "gen_ai.operation.name, proposed member"
     brief: >
       Proposed new member of the existing `gen_ai.operation.name` enum.
     attributes:
@@ -20,7 +20,7 @@ groups:
         type: string
         stability: experimental
         brief: >
-          `execute_authorization` — one agent authorization/governance decision made by
+          `execute_authorization`, one agent authorization/governance decision made by
           a policy decision point (PDP), agent gateway, or governance layer sitting in
           front of an agent action. This operation is emitted by the deciding component,
           not by agent-level instrumentation, which does not have the trust/risk/scan

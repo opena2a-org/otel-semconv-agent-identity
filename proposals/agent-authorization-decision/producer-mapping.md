@@ -1,4 +1,4 @@
-# Producer mapping — decision operation
+# Producer mapping: decision operation
 
 Honest, no-overclaim mapping of what each independent producer emits **today**. AIM
 claims are verified against public `agent-identity-management` `origin/main`; AGT claims
@@ -6,17 +6,17 @@ are from primary source (PR [#3190](https://github.com/microsoft/agent-governanc
 
 | Signal | AIM (public `origin/main`) | AGT (#3190, public) |
 |---|---|---|
-| Per-decision span | `fga.authorize` | — (metrics only) |
-| Decision counter | `fga.decisions` — ONE counter + `fga.outcome` attr (meter `aim/fga`) | `acs_intervention_{allow,deny,warn,escalate,transform}_total` — N counters (meter `agent_control_specification`) |
+| Per-decision span | `fga.authorize` | none (metrics only) |
+| Decision counter | `fga.decisions`, ONE counter + `fga.outcome` attr (meter `aim/fga`) | `acs_intervention_{allow,deny,warn,escalate,transform}_total`, N counters (meter `agent_control_specification`) |
 | Duration histogram | `fga.latency_ms` (ms) | `acs_intervention_duration_ms` (ms) |
 | Outcome values | `ALLOW`, `DENY`, `DENY_ATTRIBUTE`/`DENY_CONTEXT`/`DENY_CHAIN`/`DENY_INTENT`, `ERROR` (deny granularity also in `fga.denied_by`) | `allow`, `deny`, `warn`, `escalate`, `transform` |
-| Signal attrs (trust/drift/scan/pubkey/capability) | yes — `gen_ai.agent.*` on the span | **none** |
+| Signal attrs (trust/drift/scan/pubkey/capability) | yes, `gen_ai.agent.*` on the span | **none** |
 
 ## What this means for the proposal
 
 - **Genuine 2-producer overlap** = decision counter + duration histogram (+ outcome).
   This is the core the convention standardizes.
-- **NOT the signal attributes** — AGT emits none of them. They are optional, producer-
+- **NOT the signal attributes.** AGT emits none of them. They are optional, producer-
   specific enrichment. Any proposal text that implies AGT emits trust/drift/scan is wrong.
 - **Counter shape**: AIM is already in the OTel-preferred single-counter-plus-`outcome`
   form; the reconciliation asks AGT to collapse its N counters. AIM gives nothing up here.
