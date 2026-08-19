@@ -83,12 +83,17 @@ and `warn` and `transform` are dropped as enforcement actions rather than answer
    three-way, and because this is emitted data rather than spec surface, a consumer
    cannot re-partition it afterwards on a discriminator that was never emitted. This
    convention does not currently propose an attribute that would carry it.
-4. **The argument for narrowing that does not rest on any producer is structural.**
-   `warn` and `transform` are exactly the two members that make invariant 2's permitting
-   set non-obvious: with them, "permitted execution" is `{allow, warn, transform}`;
-   without them it is `{allow}`, and invariant 2 can be read straight off the outcome.
-   That is a claim about this convention's own shape, not a claim about what anyone
-   emits, and it is the ground any narrowing should be argued on.
+4. **The structural argument for narrowing has been withdrawn.** It ran: `warn` and
+   `transform` are the two members that make the permitting set non-obvious, so dropping
+   them collapses it to `{allow}` and the parentage rule reads straight off the outcome.
+   That argument depended on the parentage rule being normative structure. It is now a
+   SHOULD that applies only when the deciding component creates the action span itself,
+   so there is no longer a structural simplification to buy. Any narrowing now stands or
+   falls on point 3 alone, which is the honest position: it would delete a distinction
+   the only producer emitting it publishes today, with nothing proposed to receive it.
+   Worth noting separately, and worth citing on the thread rather than here: AGT ships
+   its own statement of which decisions permit the action, so the permitting set is not
+   something this convention has to infer.
 
 ### Position
 
@@ -97,3 +102,7 @@ things stand it would delete a distinction the only producer emitting it publish
 today, with no attribute proposed to receive it. The precondition for moving is a
 recorded home for enforcement action. The producer count for this operation is
 unchanged at two, AIM and AGT.
+
+Note that point 4's withdrawal makes the hold rest on a single argument rather than two.
+That is a weaker position than the one stated on the thread on 2026-08-19, and it should
+be presented as weaker rather than restated at the old strength.

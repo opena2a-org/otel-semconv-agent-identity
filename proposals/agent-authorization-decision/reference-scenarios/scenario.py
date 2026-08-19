@@ -16,6 +16,10 @@ tracer = trace.get_tracer("agent-authorization-scenario")
 
 OP = "execute_authorization"
 
+# The outcomes under which the action proceeds. Defined once here and used by every
+# emitter below, so the scenario has a single statement of it.
+PERMITTING = ("allow", "warn", "transform")
+
 
 @dataclass
 class Decision:
@@ -62,21 +66,53 @@ def _set_decision_attributes(span, decision: Decision) -> None:
 
 
 def authorize_and_maybe_execute(gate: Gate, capability: str) -> Decision:
-    """The INTERPOSED shape, which is what this operation models.
+    """A deciding component that also creates the span for the permitted action.
 
-    The action could not reach execution except by passing this evaluation, so the
-    execute span is emitted INSIDE the decision span and is its direct child. That
-    parentage is the only part of the emitted data recording that this evaluation is
-    the one the execution passed through.
+    This is the one case the convention's Correlation paragraph covers: the component
+    creates that span itself, in the same process and inside this span's context, so it
+    lands beneath the decision. It is one conformant shape among several, not the
+    required one. `decide_only` and `decide_out_of_process` below are equally conformant.
     """
     with tracer.start_as_current_span(f"{OP} {capability}") as span:
         decision = gate.decide(capability)
         _set_decision_attributes(span, decision)
 
-        if decision.outcome in ("allow", "warn", "transform"):
+        if decision.outcome in PERMITTING:
             with tracer.start_as_current_span("execute_tool database.read"):
                 pass  # the permitted action runs here, beneath the decision that permitted it
         # deny / escalate / error: no child execute span
+        return decision
+
+
+def decide_only(gate: Gate, capability: str) -> Decision:
+    """A deciding component that emits its decision and nothing else.
+
+    This is what both public producers actually do. AIM emits `fga.authorize` with FGA
+    step children and no execute span anywhere; AGT's merged telemetry emits metrics and
+    registers no tracer. The action runs, but it is executed and instrumented elsewhere,
+    so no span for it appears under the decision. This shape is CONFORMANT.
+    """
+    with tracer.start_as_current_span(f"{OP} {capability}") as span:
+        decision = gate.decide(capability)
+        _set_decision_attributes(span, decision)
+        return decision
+
+
+def decide_out_of_process(gate: Gate, capability: str) -> Decision:
+    """A gateway that decides in one service and forwards to another.
+
+    The executor creates its own span from the propagated context. Stock propagation
+    injects the context current at the forward point, so the execute span lands as a
+    SIBLING of the decision span under a common parent. This shape is CONFORMANT: the
+    parent-child relation is not available to either party.
+    """
+    with tracer.start_as_current_span(f"gateway {capability}"):
+        with tracer.start_as_current_span(f"{OP} {capability}") as span:
+            decision = gate.decide(capability)
+            _set_decision_attributes(span, decision)
+        if decision.outcome in PERMITTING:
+            with tracer.start_as_current_span("execute_tool database.read"):
+                pass  # executed downstream, under the gateway span, not the decision
         return decision
 
 
@@ -88,9 +124,11 @@ def evaluate_after_the_fact(gate: Gate, capability: str) -> Decision:
     answer it reaches could have prevented the action, so the decision span is a SIBLING
     of the execute span and never its parent.
 
-    This is here so the validator can assert the shape is REJECTED. Selecting spans by
-    name alone cannot tell it apart from an interposed decision: the same two span names
-    are present in both, with the same attributes. Only parentage separates them.
+    The convention says instrumentation SHOULD NOT emit this operation for such an
+    evaluation. Nothing in the emitted data marks it, which is exactly why the rule is a
+    producer duty and not a property a consumer can check: this shape is byte-identical
+    to a conformant out-of-process decision. The validator records that rather than
+    pretending to detect it.
     """
     with tracer.start_as_current_span("execute_tool database.read"):
         pass  # the action runs, conditioned on nothing

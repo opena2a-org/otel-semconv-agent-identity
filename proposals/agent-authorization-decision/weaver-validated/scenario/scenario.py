@@ -6,20 +6,19 @@ The instrumentation emits one ``gen_ai.execute_authorization`` span per decision
 sets the span attributes from the returned decision object, not from literals -- so both
 the instrumentation point (the gate) and the data source (the decision) are visible.
 
-Two decisions are exercised to demonstrate the structural invariants:
+Two decisions are exercised:
 
-  * an ``allow`` decision, under which an ``execute_tool`` span runs as a DIRECT CHILD
-    of the decision span (invariant 2: a child execute span is present iff the decision
-    permitted execution, and its parentage is what records that this evaluation is the
-    one the execution passed through);
-  * a ``deny`` decision, which is a present span with no child execute span beneath it,
-    so a refusal stays auditable; "never attempted" would be no decision span at all
-    (invariant 3: span shape carries exactly one distinction, evaluated versus never
-    attempted, and every other distinction is read from ``outcome``).
+  * an ``allow`` decision, under which an ``execute_tool`` span runs beneath the decision
+    span. This scenario is the case the convention's Correlation paragraph covers, where
+    the deciding component creates the span for the permitted action itself. A producer
+    that decides in one service and executes in another is equally conformant and would
+    emit that span as a sibling; the relationship is simply not available to it;
+  * a ``deny`` decision, a present span with no permitted action beneath it, so the
+    refusal is recorded rather than silently absent. ``escalate`` and ``error`` produce
+    the same shape, so the ``outcome`` attribute is what distinguishes them.
 
-Both decisions are interposed: the action could not have reached execution except by
-passing them. A policy evaluated over activity that has already completed is out of
-scope for this operation and is not modelled here.
+Both decisions here are consulted before the action. A policy evaluated over activity
+that has already completed is out of scope for this operation and is not modelled.
 
 The optional ``gen_ai.agent.{trust,drift,scan}.*`` and ``public_key.algorithm`` signals
 are producer-specific enrichment on the decision span (a producer such as AIM computes
@@ -101,8 +100,8 @@ def _emit_decision(decision: AuthorizationDecision):
     with _reference_tracer.start_as_current_span(
         f"execute_authorization {decision.capability}", attributes=span_attributes
     ):
-        # Invariant 2: a child execute span is emitted iff execution was permitted,
-        # and it is emitted HERE, inside the decision span, so it is a direct child.
+        # The span for the permitted action is created by the deciding component here,
+        # so it lands beneath the decision. See the Correlation paragraph in the model.
         if decision.outcome in ("allow", "warn", "transform"):
             with _reference_tracer.start_as_current_span(
                 "execute_tool query_database",

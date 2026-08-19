@@ -1,22 +1,26 @@
-"""Validate the decision-operation structural invariants with an in-memory exporter.
+"""Validate the decision operation's contract with an in-memory exporter.
 
-Runs the reference scenario across the outcomes and asserts:
+The convention makes two kinds of statement, and they are checked differently here
+because only one of them is checkable from emitted data at all.
 
-  - invariant 1: a decision span is present iff an interposed evaluation occurred;
-  - invariant 2: a child execute span exists iff the outcome permitted execution, and
-    where it exists it is a DIRECT CHILD of the decision span. Parentage is what records
-    that this evaluation is the one the execution passed through, so it is asserted
-    rather than assumed;
-  - invariant 3: span shape carries exactly one distinction, evaluated versus never
-    attempted. `deny`, `escalate` and `error` are asserted to be INDISTINGUISHABLE by
-    shape, so only the `outcome` attribute separates them.
+CONTRACT, asserted, exits non-zero on failure:
+  - a decision span is emitted for every evaluation, including refusals;
+  - `gen_ai.agent.authorization.outcome` is present and is a member of the enum;
+  - `gen_ai.agent.authorization.reason` is present when the outcome is not `allow`;
+  - the outcome attribute is the only discriminator: `deny`, `escalate` and `error`
+    are indistinguishable by span shape.
 
-It also asserts that the NON-INTERPOSED shape is rejected: an action that ran and
-completed, with a policy evaluated over it afterwards as a sibling span. That shape is
-out of scope, and selecting spans by name alone cannot tell it apart from an interposed
-decision. The `allow` form of it is the load-bearing case, because span counts are
-identical to the in-scope shape; the check below asserts it is rejected specifically by
-the parentage assertion, so this never becomes a test that passes for the wrong reason.
+SHAPE, observed and printed, never asserted:
+  - whether a span for the permitted action appears beneath the decision span. This is
+    a SHOULD that applies only when the deciding component creates that span itself.
+    Three conformant producers fail it: one that emits the decision alone (what both
+    public producers do today), an out-of-process gateway whose executor is a sibling,
+    and any deployment where the action is instrumented by a different producer.
+
+The emission rule that excludes a policy evaluated over already-completed activity is a
+producer duty and is deliberately NOT asserted. That shape is byte-identical to a
+conformant out-of-process decision, so a checker claiming to detect it would be lying.
+This file records that fact rather than encoding a check that cannot work.
 
 Run with any environment that has the opentelemetry-sdk installed:
     python -m venv .venv && .venv/bin/pip install opentelemetry-sdk
@@ -38,13 +42,18 @@ trace.set_tracer_provider(provider)
 import scenario  # noqa: E402  (tracer must resolve against the provider set above)
 scenario.tracer = trace.get_tracer("agent-authorization-scenario")
 
-PERMITTING = ("allow", "warn", "transform")
-CHILDLESS = ("deny", "escalate", "error")
-PARENTAGE = "not a direct child of the decision span"
+OUTCOMES = ("allow", "warn", "transform", "deny", "escalate", "error")
+
+# Stated here independently of the scenario, from the convention: under these outcomes no
+# action proceeds. It is NOT derived from `scenario.PERMITTING`, because an oracle that
+# reads its expectation out of the implementation can only ever agree with it. The two
+# statements are cross-checked below, so a drift in either one fails rather than being
+# silently shared.
+NO_PERMITTED_ACTION = ("deny", "escalate", "error")
+PERMITTING = tuple(o for o in OUTCOMES if o not in NO_PERMITTED_ACTION)
 
 
 def emit(emitter, outcome: str):
-    """Run one emitter at one outcome and select the spans by name, as a consumer would."""
     exporter.clear()
     gate = scenario.Gate()
     base = gate.decide("database.read")
@@ -57,100 +66,106 @@ def emit(emitter, outcome: str):
     return decision, execute
 
 
-def check(outcome: str, decision, execute):
-    """The invariants, as a consumer of the emitted data can check them."""
+def contract(outcome: str, decision, execute):
+    """What the convention requires, and what emitted data can actually show."""
     problems = []
-
     if len(decision) != 1:
-        problems.append(f"expected 1 decision span, got {len(decision)}")
+        problems.append(f"expected exactly 1 decision span, got {len(decision)}")
         return problems
-
-    got = decision[0].attributes.get("gen_ai.agent.authorization.outcome")
-    if got != outcome:
+    attrs = decision[0].attributes
+    got = attrs.get("gen_ai.agent.authorization.outcome")
+    if got is None:
+        problems.append("outcome attribute is absent; it is `required`")
+    elif got not in OUTCOMES:
+        problems.append(f"outcome {got!r} is not a member of the enum")
+    elif got != outcome:
         problems.append(f"outcome attribute is {got!r}, not {outcome!r}")
-
-    expected = 1 if outcome in PERMITTING else 0
-    if len(execute) != expected:
-        problems.append(f"expected {expected} child execute spans, got {len(execute)}")
-
-    # Invariant 2's parentage half. Counting cannot see this: the non-interposed shape
-    # emits the same span names in the same numbers.
-    for ex in execute:
-        parent = ex.parent
-        if parent is None or parent.span_id != decision[0].context.span_id:
-            problems.append(f"execute span {ex.name!r} is {PARENTAGE}")
-
+    if outcome != "allow" and not attrs.get("gen_ai.agent.authorization.reason"):
+        problems.append("reason is absent; it is conditionally required when outcome is not `allow`")
     return problems
+
+
+def parented(decision, execute):
+    """Observation, not an assertion. None when there is no action span to place."""
+    if not execute or not decision:
+        return None
+    return all(e.parent is not None and e.parent.span_id == decision[0].context.span_id
+               for e in execute)
 
 
 def main():
     failures = []
 
-    # --- invariants 1 and 2, in scope, both directions of the permitting set ----------
-    for outcome in PERMITTING:
-        dec, ex = emit(scenario.authorize_and_maybe_execute, outcome)
-        problems = check(outcome, dec, ex)
-        failures += [f"interposed {outcome}: {p}" for p in problems]
-        print(f"interposed {outcome:9s} -> decision={len(dec)} execute={len(ex)} "
-              f"parented={bool(ex) and ex[0].parent is not None and dec and ex[0].parent.span_id == dec[0].context.span_id}"
-              f"  {'OK' if not problems else 'FAIL'}")
+    if set(PERMITTING) != set(scenario.PERMITTING):
+        failures.append(
+            f"the convention's permitting set {sorted(PERMITTING)} and the scenario's "
+            f"{sorted(scenario.PERMITTING)} disagree; one of them has drifted"
+        )
+        print(f"permitting set: MISMATCH {sorted(PERMITTING)} vs {sorted(scenario.PERMITTING)}\n")
+    else:
+        print(f"permitting set agrees between convention and scenario: {sorted(PERMITTING)}\n")
 
-    # --- invariant 3: the childless outcomes are indistinguishable by shape ----------
+    print("CONTRACT (asserted)")
+    for outcome in OUTCOMES:
+        dec, ex = emit(scenario.authorize_and_maybe_execute, outcome)
+        problems = contract(outcome, dec, ex)
+        failures += [f"{outcome}: {p}" for p in problems]
+        print(f"  {outcome:9s} decision={len(dec)} outcome-attr=ok reason=ok"
+              f"  {'OK' if not problems else 'FAIL ' + '; '.join(problems)}")
+
+    # The outcome attribute is the discriminator, so the outcomes that permit no action
+    # must be indistinguishable by shape. This is the property that keeps a refusal from
+    # being readable off the trace instead of off the attribute.
     shapes = {}
-    for outcome in CHILDLESS:
+    for outcome in NO_PERMITTED_ACTION:
         dec, ex = emit(scenario.authorize_and_maybe_execute, outcome)
-        problems = check(outcome, dec, ex)
-        failures += [f"interposed {outcome}: {p}" for p in problems]
         shapes[outcome] = (len(dec), len(ex))
-        print(f"interposed {outcome:9s} -> decision={len(dec)} execute={len(ex)} "
-              f" {'OK' if not problems else 'FAIL'}")
-
     if len(set(shapes.values())) != 1:
         failures.append(
-            f"deny/escalate/error are distinguishable by span shape ({shapes}); "
-            "invariant 3 claims span shape carries exactly one distinction, so this "
-            "would make the shape readable as an outcome discriminator"
+            f"{', '.join(NO_PERMITTED_ACTION)} are distinguishable by span shape ({shapes}); "
+            "span shape would then be readable as an outcome discriminator, which the "
+            "convention says it is not"
         )
     else:
-        print(f"\nshape is identical for deny/escalate/error {shapes['deny']}, "
-              "so only `outcome` separates them (invariant 3)")
+        print(f"\n  {', '.join(NO_PERMITTED_ACTION)} share one shape {shapes['deny']}, "
+              "so only `outcome` separates them")
 
-    # --- the non-interposed shape is out of scope and must be rejected ---------------
-    # `allow` is the load-bearing case: span NAMES and COUNTS are identical to the
-    # in-scope shape, so it passes every name-only check and only parentage rejects it.
-    print()
-    for outcome in ("allow", "deny"):
-        dec, ex = emit(scenario.evaluate_after_the_fact, outcome)
-        problems = check(outcome, dec, ex)
-        if not problems:
-            failures.append(
-                f"non-interposed {outcome}: accepted, but this shape is out of scope "
-                "(invariant 1). The evaluation ran after the action completed and could "
-                "not have borne on whether it ran."
-            )
-        print(f"non-interposed {outcome:9s} -> decision={len(dec)} execute={len(ex)} "
-              f" rejected={bool(problems)}  {problems if problems else ''}")
+    # Span shape does NOT carry exactly one distinction. Recording the real number here
+    # so the claim cannot quietly come back: with a permitted action emitted beneath the
+    # decision, shape alone splits the enum in two.
+    cells = {}
+    for outcome in OUTCOMES:
+        dec, ex = emit(scenario.authorize_and_maybe_execute, outcome)
+        cells.setdefault((len(dec), len(ex)), []).append(outcome)
+    print(f"  shape-only partition over all {len(OUTCOMES)} outcomes: {len(cells)} cells")
+    for k, v in sorted(cells.items()):
+        print(f"    {k} -> {', '.join(v)}")
 
-    # Non-vacuity: the `allow` rejection must come from the parentage assertion and not
-    # from a span count, or this case would pass for a reason that does not generalize.
-    dec, ex = emit(scenario.evaluate_after_the_fact, "allow")
-    problems = check("allow", dec, ex)
-    if not any(PARENTAGE in p for p in problems):
-        failures.append(
-            "non-interposed allow was not rejected by the parentage assertion "
-            f"(problems were {problems}); parentage is the only witness of interposition, "
-            "so a rejection on any other ground does not prove it is being checked"
-        )
-    else:
-        print("\nnon-interposed allow is rejected BY PARENTAGE, not by a span count, "
-              "so the interposition witness is the thing being asserted")
+    print("\nSHAPE (observed, never asserted)")
+    for label, emitter in (
+        ("deciding component creates the action span", scenario.authorize_and_maybe_execute),
+        ("decision only, action instrumented elsewhere", scenario.decide_only),
+        ("out-of-process gateway, executor is a sibling", scenario.decide_out_of_process),
+        ("policy evaluated after the action completed", scenario.evaluate_after_the_fact),
+    ):
+        dec, ex = emit(emitter, "allow")
+        problems = contract("allow", dec, ex)
+        failures += [f"{label}: {p}" for p in problems]
+        p = parented(dec, ex)
+        note = {True: "child", False: "not a child", None: "no action span emitted"}[p]
+        print(f"  {label:46s} action-span-parented: {note:22s} contract: "
+              f"{'OK' if not problems else 'FAIL'}")
+
+    print("\n  All four satisfy the contract. The last is the shape the convention tells\n"
+          "  producers not to emit, and it is indistinguishable here from the third,\n"
+          "  which is why that rule is a producer duty rather than a checkable property.")
 
     if failures:
         print("\nFAIL:")
         for f in failures:
             print(f"  - {f}")
         sys.exit(1)
-    print("\nOK: invariants 1-3 hold, and the non-interposed shape is rejected.")
+    print("\nOK: the contract holds for every outcome and for every producer shape.")
 
 
 if __name__ == "__main__":

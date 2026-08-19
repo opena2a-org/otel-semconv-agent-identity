@@ -26,6 +26,7 @@ attribute_groups:
 spans:
   - type: gen_ai.execute_authorization.internal
     kind: internal
+    requirement_level: recommended
     name:
       note: >
         **Span name** SHOULD be `execute_authorization {gen_ai.agent.capability}`
@@ -40,46 +41,47 @@ spans:
       have access to the trust/risk/scan inputs or the authority basis the decision is
       measured against.
 
-      **Structural invariants** (these make a refusal auditable after the fact and keep
-      "refused" distinguishable from "never attempted"):
+      **Emission.** Instrumentation SHOULD emit this span for every evaluation it
+      performs that is consulted before the action and whose answer determines whether
+      the action proceeds, **including evaluations that refuse**. A gate that blocks a
+      call and emits nothing leaves no record of the refusal, and downstream that is
+      indistinguishable from a call that was never made. This is the property the
+      operation exists to provide.
 
-      1. A `gen_ai.execute_authorization` span is present **if and only if** an
-         interposed evaluation occurred. An evaluation is interposed when the action
-         could not have reached execution except by passing it. Two cases therefore
-         emit no span: nothing was in the reachable surface, so there was nothing to
-         evaluate; and a policy evaluated over activity that had already completed,
-         which could not have borne on whether that activity ran. Neither is an
-         `outcome` value; both are the absence of the operation.
-      2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`, ...) is
-         present **if and only if** the decision permitted execution
-         (`outcome` = `allow` / `warn` / `transform`), and where present it is a
-         **direct child** of the decision span. The parentage is not a formatting
-         preference. It is the record that this evaluation is the one the execution
-         passed through, and it is the only part of the emitted data that carries that
-         fact. An execute span that is a sibling of a decision span, or that has no
-         decision span above it, is not this operation.
-      3. Span shape carries exactly one distinction: **evaluated** versus **never
-         attempted**. A decision span is present for every interposed evaluation
-         whatever it decided, so a gate that refuses a call and emits nothing is
-         indistinguishable downstream from a call that was never made. Every other
-         distinction is read from attributes. Consumers MUST partition on
-         `gen_ai.agent.authorization.outcome`, which is what separates `deny` from
-         `escalate`, from `error`, and from any outcome added later.
+      Instrumentation SHOULD NOT emit this span for a policy evaluated over activity
+      that has already completed. No answer such an evaluation reaches could have
+      prevented the action, and recording it here mixes two populations in
+      `gen_ai.agent.authorization.duration`: how long a caller waited, and how long a
+      batch evaluation took. This convention does not say where such an evaluation
+      belongs.
 
-      **Scope.** This operation models one interposed evaluation by a deciding component
-      and records the answer that component gave, not the final disposition of the
-      action. Interposition is a property of where the component sits, not of how the
-      host manages the calling request.
+      Spans may be sampled or dropped in transit. The absence of this span is not
+      evidence that no evaluation occurred.
 
-      A gate that is interposed but configured not to refuse (a monitoring, permissive
-      or dry-run deployment) is in scope. The action reached execution by passing it, so
-      `outcome` is `allow` and the basis is carried on
-      `gen_ai.agent.authorization.reason`.
+      **Correlation.** Where the deciding component itself creates the span for the
+      permitted action, in the same process and within this span's context, that span
+      SHOULD be a child of this one. Where the decision is made by a separate service,
+      or the action is instrumented by a different producer, that relationship is not
+      available to either party, and its absence carries no meaning. No public producer
+      emits this relationship today. How a decision should be correlated with the action
+      it governed is an open question on this proposal rather than a settled part of it.
 
-      A policy evaluated over activity that has already completed is not in scope. No
-      answer it reaches could have prevented the action, so it has no execution to
-      parent and invariant 2 does not hold for it. This convention does not say where
-      such an evaluation belongs; it says only that it is not this operation.
+      **Reading the outcome.** `gen_ai.agent.authorization.outcome` is what
+      distinguishes one outcome from another. Span shape does not: `deny`, `escalate`
+      and `error` all produce a decision span with no permitted action beneath it.
+      Consumers SHOULD partition on the attribute rather than on the presence or absence
+      of a child span.
+
+      **Scope.** This operation models one evaluation by a deciding component and
+      records the answer that component gave, not the final disposition of the action.
+
+      A gate that is consulted before the action but is configured not to refuse (a
+      monitoring, permissive or dry-run deployment) is in scope. It records the answer
+      it gave, so a producer whose policy evaluated to `deny` while deployed not to
+      enforce records `deny`, with the basis on `gen_ai.agent.authorization.reason`. The
+      outcome is not rewritten to `allow` because the action went ahead; that would
+      destroy the answer the policy actually gave. This convention does not currently
+      carry the deployment mode on any attribute, which is a gap rather than a decision.
 
       A decision that defers to a higher authority (`outcome` = `escalate`) is complete
       when the deferral is recorded. A resolution reached outside that evaluation is not

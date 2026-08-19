@@ -6,8 +6,8 @@ the actual `model/` + reference-framework changes needed in
 
 Rebuilt and re-validated **2026-08-19** against `ca93747`, the current head of the #291 fork
 branch (`thebenignhacker/semantic-conventions-genai@feat/gen-ai-agent-authorization-attrs`),
-then **re-run from scratch later the same day** after the structural invariants were restated
-on the interposition axis. The re-run was done in a clean worktree at `ca93747` with the patch
+then **re-run from scratch twice more the same day**, once after the structural invariants
+were restated and again after they were removed. The re-run was done in a clean worktree at `ca93747` with the patch
 below applied and nothing else, and the regenerated patch came out byte-identical to the one
 built in the working tree.
 
@@ -108,24 +108,26 @@ Carried in from the #461 thread, 2026-08-19:
   fragment and contradicted by the validated artifact.
 - The `escalate` brief is spelled the same way here as in `model/registry.yaml`.
 
-Carried in from the #461 thread later on 2026-08-19, restating all three invariants on the
-**interposition** axis (an evaluation is interposed when the action could not have reached
-execution except by passing it):
+Carried in from the #461 thread later on 2026-08-19. The three numbered "structural
+invariants" are **gone**, replaced by three separately labelled paragraphs so the claims stop
+travelling as one normative block:
 
-- Invariant 1 is tightened. It now excludes a policy evaluated over activity that has already
-  completed, as well as the case where nothing was in the reachable surface. As previously
-  written it admitted the first of those, which is a defect in invariant 1 rather than a
-  reason to admit the shape.
-- Invariant 2 gains explicit **parentage**: where a child execute span is present it is a
-  DIRECT child of the decision span. That relation is the only thing in the emitted data that
-  records which evaluation the execution passed through.
-- Invariant 3 is restated as a closed positive claim, "span shape carries exactly one
-  distinction, evaluated versus never attempted", replacing the one-directional caveat. The
-  caveat form had to be widened each time another childless outcome appeared; the positive
-  form is stable under adding outcomes.
-- The `outcome` brief and the `allow` / `deny` member briefs follow, and the scope note gains
-  the in-scope case (an interposed gate deployed not to refuse records `outcome` = `allow`)
-  and the out-of-scope case, without proposing where the out-of-scope shape belongs.
+- **Emission**, normative, is the surviving content of the old invariant 1, restated as a
+  producer duty (SHOULD / SHOULD NOT) rather than a biconditional over a counterfactual the
+  instrumentation cannot observe. It rests on the duration histogram's population.
+- **Correlation**, a scoped SHOULD, replaces the parentage biconditional. It applies only
+  where the deciding component itself creates the span for the permitted action, and it says
+  plainly that no public producer emits the relationship today.
+- **Reading the outcome**, informative, replaces the old invariant 3. The claim "span shape
+  carries exactly one distinction" is deleted rather than reworded: it was false while the
+  parentage rule stood, because child presence made shape a perfect discriminator of the
+  permitting outcomes from the rest.
+- The span now carries `requirement_level: recommended`, the field the model already has for
+  span-presence expectation, which the previous revision left empty while writing three
+  biconditionals in prose. 10 of the 12 span types in the branch's `spans.yaml` set it.
+- The scope note no longer rewrites a permissive gate's `deny` to `allow`. A producer that
+  evaluated to `deny` while deployed not to enforce records `deny`; rewriting it destroyed the
+  answer the policy gave, and at least one public producer emits mode and decision separately.
 
 ## Contents
 

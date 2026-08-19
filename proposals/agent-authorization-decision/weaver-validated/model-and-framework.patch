@@ -275,7 +275,7 @@ index 1178bfd..fcde459 100644
  | `fetch_response` | Fetch a previously generated model response by its identifier, without performing inference, such as [OpenAI Get a model response](https://platform.openai.com/docs/api-reference/responses/get) [8] | ![Development](https://img.shields.io/badge/-development-blue) |
  | `generate_content` | Multimodal content generation operation such as [Gemini Generate Content](https://ai.google.dev/api/generate-content) | ![Development](https://img.shields.io/badge/-development-blue) |
 diff --git a/docs/registry/attributes/gen-ai.md b/docs/registry/attributes/gen-ai.md
-index 56cff17..583a7a5 100644
+index 56cff17..c1367d5 100644
 --- a/docs/registry/attributes/gen-ai.md
 +++ b/docs/registry/attributes/gen-ai.md
 @@ -7,80 +7,91 @@
@@ -283,7 +283,7 @@ index 56cff17..583a7a5 100644
  | Key | Stability | Value Type | Description | Example Values |
  | --- | --- | --- | --- | --- |
 -| <a id="gen-ai-agent-capability" href="#gen-ai-agent-capability">`gen_ai.agent.capability`</a> | ![Development](https://img.shields.io/badge/-development-blue) | string | The capability the agent is attempting to invoke, named in the producer's capability namespace. [1] | `database.read`; `email.send`; `code.execute` |
-+| <a id="gen-ai-agent-authorization-outcome" href="#gen-ai-agent-authorization-outcome">`gen_ai.agent.authorization.outcome`</a> | ![Development](https://img.shields.io/badge/-development-blue) | string | Terminal outcome of an agent authorization/governance decision, as answered by an interposed evaluation: one the action could not have reached execution except by passing. Present if and only if such an evaluation occurred. The absence of a decision span is not represented by an enum value, whether because nothing was in the reachable surface or because the policy was evaluated over activity that had already completed. [1] | `allow`; `deny`; `warn` |
++| <a id="gen-ai-agent-authorization-outcome" href="#gen-ai-agent-authorization-outcome">`gen_ai.agent.authorization.outcome`</a> | ![Development](https://img.shields.io/badge/-development-blue) | string | The answer the deciding component gave for this evaluation. It records what the policy decided, not the final disposition of the action: a gate deployed not to enforce still records the answer it reached. [1] | `allow`; `deny`; `warn` |
 +| <a id="gen-ai-agent-authorization-policy-name" href="#gen-ai-agent-authorization-policy-name">`gen_ai.agent.authorization.policy.name`</a> | ![Development](https://img.shields.io/badge/-development-blue) | string | Identifier of the policy, ruleset, or engine that produced the decision. Opaque; compared for equality only. [2] | `aim/fga`; `agent_control_specification`; `policy-set:prod` |
 +| <a id="gen-ai-agent-authorization-policy-version" href="#gen-ai-agent-authorization-policy-version">`gen_ai.agent.authorization.policy.version`</a> | ![Development](https://img.shields.io/badge/-development-blue) | string | The revision of the policy or ruleset that was in force when the decision was evaluated. Any value that stably identifies that revision within the producer's scope. [3] | `v7`; `42`; `sha256:9f2b1c` |
 +| <a id="gen-ai-agent-authorization-reason" href="#gen-ai-agent-authorization-reason">`gen_ai.agent.authorization.reason`</a> | ![Development](https://img.shields.io/badge/-development-blue) | string | Producer-defined reason code for a non-`allow` outcome. Low-cardinality; identifies which check resolved the decision, not a free-text message. | `capability_denied`; `context_denied`; `chain_denied`; `intent_denied` |
@@ -405,7 +405,7 @@ index 56cff17..583a7a5 100644
  
  
 -**[1] `gen_ai.agent.capability`:** This attribute MUST have low cardinality. The namespace is producer-defined, but which
-+**[1] `gen_ai.agent.authorization.outcome`:** This attribute is the only discriminator between outcomes. Span shape carries exactly one distinction, evaluated versus never attempted, so several outcomes share the same shape and none of them can be recovered from it. Consumers MUST partition on this attribute.
++**[1] `gen_ai.agent.authorization.outcome`:** This attribute is the only discriminator between outcomes. Span shape does not distinguish them: `deny`, `escalate` and `error` all produce a decision span with no permitted action beneath it. Consumers SHOULD partition on this attribute rather than on the presence or absence of a child span.
 +
 +**[2] `gen_ai.agent.authorization.policy.name`:** This attribute identifies the policy; it does not identify the revision of the policy that was in force. Where the producer's policy store is revisioned, the revision belongs on `gen_ai.agent.authorization.policy.version`. It is NOT RECOMMENDED to encode a revision inside this value, because a consumer that compares it for equality only cannot recover it.
 +
@@ -687,8 +687,8 @@ index 56cff17..583a7a5 100644
 +
 +| Value | Description | Stability |
 +| --- | --- | --- |
-+| `allow` | The action was permitted. A span for the permitted action is expected directly beneath this decision span. | ![Development](https://img.shields.io/badge/-development-blue) |
-+| `deny` | The action was refused. Refusal is recorded by this value. It is not recorded by the absence of a child execute span, which `escalate` and `error` produce as well. | ![Development](https://img.shields.io/badge/-development-blue) |
++| `allow` | The action was permitted. Where the deciding component itself creates the span for the permitted action, that span is expected beneath this one; where the action is executed or instrumented elsewhere, it is not represented in this span's structure. | ![Development](https://img.shields.io/badge/-development-blue) |
++| `deny` | The action was refused. Refusal is recorded by this value, and only by this value: `escalate` and `error` produce the same span shape. | ![Development](https://img.shields.io/badge/-development-blue) |
 +| `error` | The decision could not be evaluated; see `error.type`. | ![Development](https://img.shields.io/badge/-development-blue) |
 +| `escalate` | The decision was deferred to a higher authority (for example a human-in-the-loop). | ![Development](https://img.shields.io/badge/-development-blue) |
 +| `transform` | The action was permitted after the request was modified (for example redaction). | ![Development](https://img.shields.io/badge/-development-blue) |
@@ -798,7 +798,7 @@ index f996e86..92b5599 100644
      requirement_level: recommended
      instrument: histogram
 diff --git a/model/gen-ai/registry.yaml b/model/gen-ai/registry.yaml
-index 0aaefb9..be944d7 100644
+index 0aaefb9..48111ae 100644
 --- a/model/gen-ai/registry.yaml
 +++ b/model/gen-ai/registry.yaml
 @@ -405,6 +405,36 @@ attributes:
@@ -848,14 +848,15 @@ index 0aaefb9..be944d7 100644
 +        - id: allow
 +          value: "allow"
 +          brief: >
-+            The action was permitted. A span for the permitted action is expected directly beneath
-+            this decision span.
++            The action was permitted. Where the deciding component itself creates the span for the
++            permitted action, that span is expected beneath this one; where the action is executed
++            or instrumented elsewhere, it is not represented in this span's structure.
 +          stability: development
 +        - id: deny
 +          value: "deny"
 +          brief: >
-+            The action was refused. Refusal is recorded by this value. It is not recorded by the
-+            absence of a child execute span, which `escalate` and `error` produce as well.
++            The action was refused. Refusal is recorded by this value, and only by this value:
++            `escalate` and `error` produce the same span shape.
 +          stability: development
 +        - id: warn
 +          value: "warn"
@@ -874,15 +875,14 @@ index 0aaefb9..be944d7 100644
 +          brief: The decision could not be evaluated; see `error.type`.
 +          stability: development
 +    brief: >
-+      Terminal outcome of an agent authorization/governance decision, as answered by an interposed
-+      evaluation: one the action could not have reached execution except by passing. Present if and
-+      only if such an evaluation occurred. The absence of a decision span is not represented by an
-+      enum value, whether because nothing was in the reachable surface or because the policy was
-+      evaluated over activity that had already completed.
++      The answer the deciding component gave for this evaluation. It records what the policy
++      decided, not the final disposition of the action: a gate deployed not to enforce still
++      records the answer it reached.
 +    note: >
-+      This attribute is the only discriminator between outcomes. Span shape carries exactly one
-+      distinction, evaluated versus never attempted, so several outcomes share the same shape and
-+      none of them can be recovered from it. Consumers MUST partition on this attribute.
++      This attribute is the only discriminator between outcomes. Span shape does not distinguish
++      them: `deny`, `escalate` and `error` all produce a decision span with no permitted action
++      beneath it. Consumers SHOULD partition on this attribute rather than on the presence or
++      absence of a child span.
 +    stability: development
 +  - key: gen_ai.agent.authorization.policy.name
 +    type: string
@@ -930,7 +930,7 @@ index 0aaefb9..be944d7 100644
            value: "search_memory"
            brief: 'Search/query memories from a memory store'
 diff --git a/model/gen-ai/spans.yaml b/model/gen-ai/spans.yaml
-index bb17ae3..cd6d9b5 100644
+index bb17ae3..784a3bd 100644
 --- a/model/gen-ai/spans.yaml
 +++ b/model/gen-ai/spans.yaml
 @@ -159,6 +159,24 @@ attribute_groups:
@@ -958,12 +958,13 @@ index bb17ae3..cd6d9b5 100644
  spans:
    - type: gen_ai.inference.client
      requirement_level: recommended
-@@ -601,6 +619,91 @@ spans:
+@@ -601,6 +619,97 @@ spans:
        - ref: gen_ai.tool.call.result
          requirement_level: opt_in
  
 +  - type: gen_ai.execute_authorization.internal
 +    kind: internal
++    requirement_level: recommended
 +    name:
 +      note: >
 +        **Span name** SHOULD be `execute_authorization {gen_ai.agent.capability}`
@@ -977,44 +978,49 @@ index bb17ae3..cd6d9b5 100644
 +      agent-level or model-call instrumentation, which does not have access to the trust / risk /
 +      scan inputs or the authority basis the decision is measured against.
 +
-+      Structural invariants:
++      **Emission.** Instrumentation SHOULD emit this span for every evaluation it performs that is
++      consulted before the action and whose answer determines whether the action proceeds,
++      including evaluations that refuse. A gate that blocks a call and emits nothing leaves no
++      record of the refusal, and downstream that is indistinguishable from a call that was never
++      made. This is the property the operation exists to provide.
 +
-+      1. A `gen_ai.execute_authorization` span is present if and only if an interposed evaluation
-+         occurred. An evaluation is interposed when the action could not have reached execution
-+         except by passing it. Two cases therefore emit no span: nothing was in the reachable
-+         surface, so there was nothing to evaluate; and a policy evaluated over activity that had
-+         already completed, which could not have borne on whether that activity ran. Neither is an
-+         `outcome` value; both are the absence of the operation.
-+      2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`) is present if and only
-+         if the decision permitted execution (`outcome` = `allow` / `warn` / `transform`), and
-+         where present it is a direct child of the decision span. The parentage is not a formatting
-+         preference. It is the record that this evaluation is the one the execution passed through,
-+         and it is the only part of the emitted data that carries that fact. An execute span that
-+         is a sibling of a decision span, or that has no decision span above it, is not this
-+         operation.
-+      3. Span shape carries exactly one distinction: evaluated versus never attempted. A decision
-+         span is present for every interposed evaluation whatever it decided, so a gate that
-+         refuses a call and emits nothing is indistinguishable downstream from a call that was
-+         never made. Every other distinction is read from attributes. Consumers MUST partition on
-+         `gen_ai.agent.authorization.outcome`, which is what separates `deny` from `escalate`, from
-+         `error`, and from any outcome added later.
++      Instrumentation SHOULD NOT emit this span for a policy evaluated over activity that has
++      already completed. No answer such an evaluation reaches could have prevented the action, and
++      recording it here mixes two populations in `gen_ai.agent.authorization.duration`: how long a
++      caller waited, and how long a batch evaluation took. This convention does not say where such
++      an evaluation belongs.
 +
-+      Scope: this operation models one interposed evaluation by a deciding component and records
-+      the answer that component gave, not the final disposition of the action. Interposition is a
-+      property of where the component sits, not of how the host manages the calling request.
++      Spans may be sampled or dropped in transit. The absence of this span is not evidence that no
++      evaluation occurred.
 +
-+      A gate that is interposed but configured not to refuse (a monitoring, permissive or dry-run
-+      deployment) is in scope. The action reached execution by passing it, so `outcome` is `allow`
-+      and the basis is carried on `gen_ai.agent.authorization.reason`.
++      **Correlation.** Where the deciding component itself creates the span for the permitted
++      action, in the same process and within this span's context, that span SHOULD be a child of
++      this one. Where the decision is made by a separate service, or the action is instrumented by
++      a different producer, that relationship is not available to either party, and its absence
++      carries no meaning. No public producer emits this relationship today. How a decision should
++      be correlated with the action it governed is an open question on this proposal rather than a
++      settled part of it.
 +
-+      A policy evaluated over activity that has already completed is not in scope. No answer it
-+      reaches could have prevented the action, so it has no execution to parent and invariant 2
-+      does not hold for it. This convention does not say where such an evaluation belongs.
++      **Reading the outcome.** `gen_ai.agent.authorization.outcome` is what distinguishes one
++      outcome from another. Span shape does not: `deny`, `escalate` and `error` all produce a
++      decision span with no permitted action beneath it. Consumers SHOULD partition on the
++      attribute rather than on the presence or absence of a child span.
++
++      Scope: this operation models one evaluation by a deciding component and records the answer
++      that component gave, not the final disposition of the action.
++
++      A gate that is consulted before the action but is configured not to refuse (a monitoring,
++      permissive or dry-run deployment) is in scope. It records the answer it gave, so a producer
++      whose policy evaluated to `deny` while deployed not to enforce records `deny`, with the
++      basis on `gen_ai.agent.authorization.reason`. The outcome is not rewritten to `allow`
++      because the action went ahead; that would destroy the answer the policy actually gave. This
++      convention does not currently carry the deployment mode on any attribute, which is a gap
++      rather than a decision.
 +
 +      A decision that defers to a higher authority (`outcome` = `escalate`) is complete when the
-+      deferral is recorded. A resolution reached outside that evaluation is not a second evaluation
-+      and is not represented by this operation, so an execution that follows an out-of-band
-+      approval carries no decision span of its own.
++      deferral is recorded. A resolution reached outside that evaluation is not a second
++      evaluation and is not represented by this operation, so an execution that follows an
++      out-of-band approval carries no decision span of its own.
 +
 +      The signal attributes (`gen_ai.agent.trust.*`, `drift.*`, `scan.*`, `public_key.algorithm`)
 +      are optional producer-specific enrichment on this span, not part of the operation's required

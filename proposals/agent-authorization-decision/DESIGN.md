@@ -31,50 +31,67 @@ counter, and histogram. See `model/`.
   `public_key.algorithm`, `capability` attributes from #291, for producers that compute
   them. Not core to the operation.
 
-## Structural invariants
+## Emission rules, and what span shape does not carry
 
-These come from the #291 thread (the deny-vs-never-attempted distinction) and are what
-make the telemetry auditable.
+These come from the #291 thread (the deny-versus-never-attempted distinction). They were
+carried until 2026-08-19 as three numbered "structural invariants" described as the
+load-bearing part of the design. That framing was wrong and is recorded here rather than
+quietly dropped, because the reasoning is the useful part.
 
-1. A decision span is present **iff** an **interposed** evaluation occurred. An
-   evaluation is interposed when the action could not have reached execution except by
-   passing it.
-2. A child execute span (`execute_tool`, `invoke_agent`, …) is present **iff** the
-   decision permitted execution (`allow` / `warn` / `transform`), and where present it
-   is a **direct child** of the decision span.
-3. Span shape carries **exactly one** distinction: evaluated versus never attempted. A
-   decision span is present for every interposed evaluation whatever it decided, so a
-   gate that refuses a call and emits nothing is indistinguishable downstream from a
-   call that never happened. Everything else is read from `outcome`.
+**Emission (normative).** Emit a decision span for every evaluation consulted before the
+action whose answer determines whether the action proceeds, refusals included. A gate
+that blocks a call and emits nothing leaves no record of the refusal, and that is the one
+property this operation exists to provide. Do not emit it for a policy evaluated over
+activity that has already completed; see the non-goal below.
 
-### What each one is doing
+**Correlation (SHOULD, and an open question).** Where the deciding component itself
+creates the span for the permitted action, that span should sit beneath the decision.
+Where it does not, the relationship is unavailable and its absence means nothing.
 
-**Invariant 1 is the scope boundary, not a formality.** Two different things produce no
-span, and neither is an enum value: nothing was in the reachable surface, so there was
-nothing to evaluate; or a policy was evaluated over activity that had already completed,
-which could not have borne on whether that activity ran. The second case is a real
-deployment shape and is excluded deliberately. See the non-goal below.
+**Reading the outcome (informative).** `outcome` is the discriminator. `deny`, `escalate`
+and `error` all produce a decision span with no permitted action beneath it, so span shape
+does not identify a refusal.
 
-**Invariant 2's parentage half is the only witness of interposition in the emitted
-data.** Nothing else distinguishes "this evaluation is what the execution passed
-through" from "this evaluation happened to be recorded near it". Two traces carrying the
-same span names, the same counts and the same attributes differ only in whether the
-execute span is a child or a sibling. `reference-scenarios/validate.py` asserts the
-parentage and rejects the sibling shape, and asserts that the rejection comes from the
-parentage check rather than from a span count, because at `outcome` = `allow` the counts
-are identical and every name-only check passes.
+Consequence, unchanged: **"never attempted" is not an enum value.** Folding it in would
+require emitting a decision for a non-event and would reintroduce the exact ambiguity the
+enum removes.
 
-**Invariant 3 is stated as a closed positive claim on purpose.** Its previous form was a
-negative caveat ("a childless span does not identify a denial"), which had to be rewritten
-every time another way of producing a childless span turned up, and that had already
-happened once before this revision. As a positive claim about what shape carries, it is
-stable under adding outcomes: any new outcome is read from the attribute like the
-existing ones.
+### Why these are not stated as invariants any more
 
-Consequence: **"never attempted" is not an enum value.** Folding it in would require
-emitting a decision for a non-event and would reintroduce the exact ambiguity the enum
-removes. The distinction stays structural: `deny` = a decision span with no child
-execute, "never attempted" = no decision span.
+Three statements of the form "X is present if and only if Y" were carried as normative
+structure, and each of the three failed on measurement.
+
+**The parentage biconditional was not satisfiable by anyone.** No public producer emits
+the relation at all: every span AIM starts is an `fga.*` span and it emits no execute span
+anywhere, and AGT's merged telemetry registers no tracer. It is not satisfiable by a
+correct distributed deployment either, because parentage is written by the child's emitter
+from whatever context is current in its process; a gateway that propagates normally
+produces a sibling, which is the `server`-kind PDP still listed as an open question below.
+Upstream has no precedent for it: the only parentage sentence in the GenAI span model is
+on `gen_ai.plan.internal`, and it is a SHOULD that describes tool spans as "typically
+sibling operations under the same `invoke_agent` span", which is the shape the
+biconditional declared non-conformant. And `gen_ai.execute_tool` is only
+`requirement_level: recommended` upstream, so a conformant producer may omit the child
+entirely, which falsifies an "if and only if" outright. Upstream's conformance tooling
+cannot represent span parentage at all, so nothing in the venue this would live in could
+check it.
+
+**"Span shape carries exactly one distinction" was false while the parentage rule stood.**
+Child presence made shape a perfect discriminator of `allow`/`warn`/`transform` from
+`deny`/`escalate`/`error`. Partitioning the outcomes on shape alone gives two cells, not
+one, so the document required producers to emit a discriminator it forbade consumers to
+read. `reference-scenarios/validate.py` now prints that partition on every run so the
+claim cannot return unnoticed.
+
+**The emission biconditional asked instrumentation to condition on something it cannot
+observe.** Whether an evaluation could have prevented the action is a property of
+deployment and timing, not of anything visible at the instrumentation point. AIM is the
+example: its MEDIUM-risk path dispatches a detached, fire-and-forget intent check whose
+blocked result only logs, so the same binary in the same deployment produces both gating
+and non-gating evaluations depending on the policy's risk level. Asking a library to
+suppress a span on grounds it never sees is the same defect #291 was rejected for,
+inverted. As a SHOULD-level producer duty resting on the histogram's population, the
+content survives; as a biconditional it did not.
 
 ## Two independent producers (honest scope)
 
@@ -121,16 +138,15 @@ the exact per-producer table. Summary:
   logs (AIM does) but the convention does not require it.
 - **Not** policy evaluated over activity that has already completed. A component that
   receives reported activity and evaluates policy over it is answering the same
-  question, but no answer it reaches could have prevented the action, so it has no
-  execution to parent and invariant 2 does not hold for it. Admitting it would break
-  invariant 2 in both directions, and the refusing direction is the worse one: a
-  non-gating `deny` would be shape-identical to a real refusal while the action in fact
-  ran, which inverts the property invariant 3 exists to protect. It would also mix two
-  populations in the duration histogram, "how long the caller waited" against "how long
-  a batch evaluation took", and that histogram is half of the cross-producer overlap
-  this proposal rests on. This convention does not say where such an evaluation belongs.
-  That is a question for the maintainers, below, not an answer this proposal should
-  supply.
+  question, but no answer it reaches could have prevented the action. The reason to
+  exclude it is the metric, not the trace: it would mix two populations in
+  `gen_ai.agent.authorization.duration`, "how long the caller waited" against "how long
+  a batch evaluation took", and the counter would merge a refusal that stopped something
+  with one that did not into a single series. Nothing in the emitted data marks the
+  difference, which is why this is a producer duty stated as a SHOULD NOT rather than a
+  property a consumer can verify. This convention does not say where such an evaluation
+  belongs. That is a question for the maintainers, below, not an answer this proposal
+  should supply.
 
 ## Open questions for maintainers
 
@@ -149,6 +165,21 @@ the exact per-producer table. Summary:
   need to model.
 - Whether this operation and guardrail-style content checks should share an enforcement
   axis, or stay separate operations that happen to run in one pass on some producers.
+- **How a decision should be correlated with the action it governed.** This is the
+  question the parentage rule was silently answering, and removing that rule leaves it
+  open rather than settled. A recomputable content-addressed identifier was declined
+  twice on #291 and stays a non-goal above. Trace parentage was the implicit alternative
+  and no public producer emits it. Asked without a preferred answer: common ancestry
+  under the calling operation, a span link, an explicit identifier revisited, or out of
+  scope for this convention. The answer interacts with the span-kind question above: if
+  a standalone PDP is `server`, parentage is structurally unavailable regardless.
+- **Whether the deployment mode belongs on this operation.** A gate consulted before the
+  action but deployed not to enforce records the answer it gave, so a policy that
+  evaluated to `deny` records `deny` even though the action proceeded. Nothing currently
+  carries the enforcing-versus-dry-run distinction, so a consumer cannot separate those
+  populations. There is a producer for it (AGT emits an enforcement mode on both its
+  counter and its histogram), so this is a real candidate rather than a gap invented to
+  be filled.
 
 ## Why the signal attributes are not being pushed for merge
 

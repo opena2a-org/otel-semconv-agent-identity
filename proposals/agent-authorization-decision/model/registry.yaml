@@ -39,31 +39,29 @@ groups:
       - id: gen_ai.agent.authorization.outcome
         stability: experimental
         brief: >
-          The terminal outcome of the authorization decision, as answered by an
-          interposed evaluation: one the action could not have reached execution
-          except by passing. This attribute is present if and only if such an
-          evaluation occurred. The absence of a decision span is not represented by
-          an enum value, whether because nothing was in the reachable surface or
-          because the policy was evaluated over activity that had already completed.
+          The answer the deciding component gave for this evaluation. It records what the
+          policy decided, not the final disposition of the action: a gate deployed not to
+          enforce still records the answer it reached.
         note: >
-          This attribute is the only discriminator between outcomes. Span shape carries
-          exactly one distinction, evaluated versus never attempted, so several outcomes
-          share the same shape and none of them can be recovered from it. Consumers MUST
-          partition on this attribute.
+          This attribute is the only discriminator between outcomes. Span shape does not
+          distinguish them: `deny`, `escalate` and `error` all produce a decision span
+          with no permitted action beneath it. Consumers SHOULD partition on this
+          attribute rather than on the presence or absence of a child span.
         type:
           members:
             - id: allow
               value: "allow"
               brief: >
-                The action was permitted. A span for the permitted action is expected
-                directly beneath this decision span.
+                The action was permitted. Where the deciding component itself creates the
+                span for the permitted action, that span is expected beneath this one;
+                where the action is executed or instrumented elsewhere, it is not
+                represented in this span's structure.
               stability: experimental
             - id: deny
               value: "deny"
               brief: >
-                The action was refused. Refusal is recorded by this value. It is not
-                recorded by the absence of a child execute span, which `escalate` and
-                `error` produce as well.
+                The action was refused. Refusal is recorded by this value, and only by
+                this value: `escalate` and `error` produce the same span shape.
               stability: experimental
             - id: warn
               value: "warn"
