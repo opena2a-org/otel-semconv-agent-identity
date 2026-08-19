@@ -5,7 +5,11 @@ the actual `model/` + reference-framework changes needed in
 `open-telemetry/semantic-conventions-genai`, plus a runnable reference scenario.
 
 Rebuilt and re-validated **2026-08-19** against `ca93747`, the current head of the #291 fork
-branch (`thebenignhacker/semantic-conventions-genai@feat/gen-ai-agent-authorization-attrs`).
+branch (`thebenignhacker/semantic-conventions-genai@feat/gen-ai-agent-authorization-attrs`),
+then **re-run from scratch later the same day** after the structural invariants were restated
+on the interposition axis. The re-run was done in a clean worktree at `ca93747` with the patch
+below applied and nothing else, and the regenerated patch came out byte-identical to the one
+built in the working tree.
 
 ## Result
 
@@ -59,6 +63,34 @@ patch itself no longer applied to the branch:
 - The `genai_operation_name_unknown` rule described above did not exist in the older pin, which
   is why the July run reported zero advisories for a new operation name.
 
+## Two things the re-run found in the recorded artifact
+
+Both were invisible until the whole thing was rebuilt rather than trusted.
+
+1. **The patch was incomplete.** Adding a `gen_ai.operation.name` member propagates into
+   every weaver-generated operation-name table in the repository. `make generate-docs`
+   regenerates **nine** files under `docs/gen-ai/` that the recorded patch did not carry
+   (`anthropic.md`, `aws-bedrock.md`, `azure-ai-inference.md`, `gen-ai-agent-spans.md`,
+   `gen-ai-events.md`, `gen-ai-metrics.md`, `gen-ai-spans.md`, `mcp.md`, `openai.md`). A PR
+   carrying only the old patch would have left generated docs out of date. They are included
+   now, which is why the patch went from 11 files to 18.
+2. **Two of the old patch's hunks were noise.** `docs/registry/README.md` and
+   `docs/registry/attributes/README.md` appeared in it only to strip their trailing newline,
+   an artifact of the environment the July run used. Regenerating with the pinned weaver
+   (`v0.25.1`) does not reproduce them, and they are gone.
+
+## A third failure mode, which is not a defect in the patch
+
+Beyond the two runner-side additions below, the run also depends on a network fetch into
+weaver's own `~/.weaver/vdir_cache`. On a cold cache the live-check server does not come up
+inside its readiness window and the run dies with `TimeoutError: WeaverLiveCheck did not
+become ready in time` and **exit code 1**. It is worth naming because it looks like a
+policy-compilation failure and is not one: run `weaver registry live-check` directly and it
+reports `No after_resolution policy violation`, which is how this was told apart. Re-running
+once the cache is warm succeeds. Note the contrast with the failure mode below, where the run
+exits **0** while reporting violations: neither the exit code alone nor the status line alone
+is a sufficient check.
+
 ## Model changes in this revision
 
 Carried in from the #461 thread, 2026-08-19:
@@ -74,10 +106,26 @@ Carried in from the #461 thread, 2026-08-19:
 - The three method tokens are `conditionally_required` here, matching `model/spans.yaml`. The
   previous revision of this patch carried `recommended`, so the level was stated in the model
   fragment and contradicted by the validated artifact.
-- Invariant 3 is stated as one-directional. `escalate` and `error` also emit no child execute
-  span, so a childless decision span does not identify a denial; the discriminator is the
-  `outcome` attribute.
 - The `escalate` brief is spelled the same way here as in `model/registry.yaml`.
+
+Carried in from the #461 thread later on 2026-08-19, restating all three invariants on the
+**interposition** axis (an evaluation is interposed when the action could not have reached
+execution except by passing it):
+
+- Invariant 1 is tightened. It now excludes a policy evaluated over activity that has already
+  completed, as well as the case where nothing was in the reachable surface. As previously
+  written it admitted the first of those, which is a defect in invariant 1 rather than a
+  reason to admit the shape.
+- Invariant 2 gains explicit **parentage**: where a child execute span is present it is a
+  DIRECT child of the decision span. That relation is the only thing in the emitted data that
+  records which evaluation the execution passed through.
+- Invariant 3 is restated as a closed positive claim, "span shape carries exactly one
+  distinction, evaluated versus never attempted", replacing the one-directional caveat. The
+  caveat form had to be widened each time another childless outcome appeared; the positive
+  form is stable under adding outcomes.
+- The `outcome` brief and the `allow` / `deny` member briefs follow, and the scope note gains
+  the in-scope case (an interposed gate deployed not to refuse records `outcome` = `allow`)
+  and the out-of-scope case, without proposing where the out-of-scope shape belongs.
 
 ## Contents
 
@@ -88,7 +136,9 @@ Carried in from the #461 thread, 2026-08-19:
     the note).
   - `model/gen-ai/metrics.yaml`: `gen_ai.agent.authorization.{decisions,duration}`.
   - `reference/src/semconv_genai/{semconv_model.py,data_files.py}`: register the span type.
-  - `docs/registry/**`, `reference/reports/**`, `reference/README.md`: regenerated outputs.
+  - `docs/registry/attributes/gen-ai.md`, `docs/gen-ai/*.md` (nine files), `reference/reports/**`,
+    `reference/README.md`: regenerated outputs. Regenerate with `make generate-registry`,
+    `make generate-docs` and `uv run update-reports`; do not hand-edit them.
 - `scenario/`, the runnable reference scenario (`scenario.py`, `conformance.yaml`,
   `pyproject.toml`, `uv.lock`, `data.json`). Drop under
   `reference/scenarios/agent-authorization-decision/`.

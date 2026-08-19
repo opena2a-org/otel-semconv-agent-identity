@@ -8,10 +8,18 @@ the instrumentation point (the gate) and the data source (the decision) are visi
 
 Two decisions are exercised to demonstrate the structural invariants:
 
-  * an ``allow`` decision, under which a child ``execute_tool`` span runs (invariant 2:
-    a child execute span is present iff the decision permitted execution);
-  * a ``deny`` decision, which is a present span with NO child execute span beneath it
-    (invariant 3: a denial stays auditable; "never attempted" would be no span at all).
+  * an ``allow`` decision, under which an ``execute_tool`` span runs as a DIRECT CHILD
+    of the decision span (invariant 2: a child execute span is present iff the decision
+    permitted execution, and its parentage is what records that this evaluation is the
+    one the execution passed through);
+  * a ``deny`` decision, which is a present span with no child execute span beneath it,
+    so a refusal stays auditable; "never attempted" would be no decision span at all
+    (invariant 3: span shape carries exactly one distinction, evaluated versus never
+    attempted, and every other distinction is read from ``outcome``).
+
+Both decisions are interposed: the action could not have reached execution except by
+passing them. A policy evaluated over activity that has already completed is out of
+scope for this operation and is not modelled here.
 
 The optional ``gen_ai.agent.{trust,drift,scan}.*`` and ``public_key.algorithm`` signals
 are producer-specific enrichment on the decision span (a producer such as AIM computes
@@ -93,7 +101,8 @@ def _emit_decision(decision: AuthorizationDecision):
     with _reference_tracer.start_as_current_span(
         f"execute_authorization {decision.capability}", attributes=span_attributes
     ):
-        # Invariant 2/3: a child execute span is emitted iff execution was permitted.
+        # Invariant 2: a child execute span is emitted iff execution was permitted,
+        # and it is emitted HERE, inside the decision span, so it is a direct child.
         if decision.outcome in ("allow", "warn", "transform"):
             with _reference_tracer.start_as_current_span(
                 "execute_tool query_database",

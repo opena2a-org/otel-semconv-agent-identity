@@ -31,21 +31,51 @@ makes the operation cross-producer rather than solo. Coordinate on-thread.
 ## Validation
 
 `validate.py` runs `scenario.py` through an in-memory span exporter and asserts the three
-structural invariants. Verified 2026-07-02:
+structural invariants, plus the exclusion of the non-interposed shape. Re-run 2026-08-19,
+exit code 0:
 
 ```
-deny  -> decision spans=1 execute spans=0  outcome=deny
-allow -> decision spans=1 execute spans=1  outcome=allow
-OK: invariants 1-3 hold for deny and allow.
+interposed allow     -> decision=1 execute=1 parented=True  OK
+interposed warn      -> decision=1 execute=1 parented=True  OK
+interposed transform -> decision=1 execute=1 parented=True  OK
+interposed deny      -> decision=1 execute=0  OK
+interposed escalate  -> decision=1 execute=0  OK
+interposed error     -> decision=1 execute=0  OK
+
+shape is identical for deny/escalate/error (1, 0), so only `outcome` separates them (invariant 3)
+
+non-interposed allow     -> decision=1 execute=1  rejected=True
+non-interposed deny      -> decision=1 execute=1  rejected=True
+
+non-interposed allow is rejected BY PARENTAGE, not by a span count, so the interposition
+witness is the thing being asserted
+
+OK: invariants 1-3 hold, and the non-interposed shape is rejected.
 ```
 
 Run: `python validate.py` (any env with `opentelemetry-sdk`).
 
+### Why the `allow` exclusion case is the load-bearing one
+
+The non-interposed shape is an action that ran to completion with a policy evaluated over
+it afterwards, as a sibling span rather than a parent. At `outcome` = `deny` a span count
+already rejects it, because a refusal is not supposed to have an execute span at all. At
+`outcome` = `allow` the span names and counts are IDENTICAL to the in-scope shape, so every
+name-only check passes and only parentage rejects it. The validator therefore asserts not
+just that the `allow` case is rejected but that the rejection comes from the parentage
+check, so this can never pass for a reason that does not generalize.
+
+Each assertion was mutation-checked. Deleting the parentage assertion, emitting the
+interposed execute span as a sibling, and giving `escalate` a child execute span each turn
+the run red (exit 1) naming the assertion they break; the unmutated run exits 0.
+
 ## TODO before upstream submission
 
 - [x] Prove the invariants with a runnable scenario (`validate.py`).
-- [x] Wire a real scenario to the actual Weaver live-check. **Done 2026-07-02, exit 0, 0 advice.**
-      See `../weaver-validated/` for the model+framework patch, the runnable scenario, and the
-      generated coverage report.
-- [ ] Regenerate the reference report tables.
+- [x] Wire a real scenario to the actual Weaver live-check. See `../weaver-validated/` for the
+      model+framework patch, the runnable scenario, and the generated coverage report, and
+      for what the recorded July result no longer says: the run reports `status: ok` and
+      exit 0 only with two additions to the pinned conformance runner, which lives in a
+      different repository. Rebuilt and re-run 2026-08-19.
+- [x] Regenerate the reference report tables. Regenerated 2026-08-19 from the runner.
 - [ ] Confirm span kind (`internal` vs `server`) with maintainers before wiring the group.

@@ -14,6 +14,12 @@ used. See `weaver-validated/README.md` for the measurement and for the two runne
 additions the clean result depends on. The filed issue body on GitHub carries the same
 sentence and has not been edited.
 
+**The same sentence understated a second thing, found on the 2026-08-19 rebuild.** The patch
+it refers to was also incomplete: adding a `gen_ai.operation.name` member regenerates nine
+`docs/gen-ai/*.md` operation-name tables that the patch did not carry. That is fixed in the
+tree, and it is recorded here because the claim in the filed body is what pointed at the
+patch. The tree the body links to now carries the complete, re-validated version.
+
 **Status when drafted: 2026-08-06, NOT filed.** Held deliberately.
 
 Intended target: a new issue on `open-telemetry/semantic-conventions-genai`.

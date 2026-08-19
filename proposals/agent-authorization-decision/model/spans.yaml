@@ -40,33 +40,52 @@ spans:
       have access to the trust/risk/scan inputs or the authority basis the decision is
       measured against.
 
-      **Structural invariants** (these make a denial auditable after the fact and keep
-      "denied" distinguishable from "never attempted"):
+      **Structural invariants** (these make a refusal auditable after the fact and keep
+      "refused" distinguishable from "never attempted"):
 
-      1. A `gen_ai.execute_authorization` span is present **if and only if** the gate
-         actually evaluated a decision. If nothing was in the reachable surface then there
-         was nothing to attempt, so there is no decision and no span. That case is the
-         absence of the operation, not an `outcome` value.
-      2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`, …) is
+      1. A `gen_ai.execute_authorization` span is present **if and only if** an
+         interposed evaluation occurred. An evaluation is interposed when the action
+         could not have reached execution except by passing it. Two cases therefore
+         emit no span: nothing was in the reachable surface, so there was nothing to
+         evaluate; and a policy evaluated over activity that had already completed,
+         which could not have borne on whether that activity ran. Neither is an
+         `outcome` value; both are the absence of the operation.
+      2. A child execute span (`gen_ai.execute_tool`, `gen_ai.invoke_agent`, ...) is
          present **if and only if** the decision permitted execution
-         (`outcome` = `allow` / `warn` / `transform`).
-      3. A denied decision (`outcome` = `deny`) is emitted as a present span with **no**
-         child execute span beneath it. A gate that blocks a call and emits nothing is
-         indistinguishable downstream from a call that never happened.
+         (`outcome` = `allow` / `warn` / `transform`), and where present it is a
+         **direct child** of the decision span. The parentage is not a formatting
+         preference. It is the record that this evaluation is the one the execution
+         passed through, and it is the only part of the emitted data that carries that
+         fact. An execute span that is a sibling of a decision span, or that has no
+         decision span above it, is not this operation.
+      3. Span shape carries exactly one distinction: **evaluated** versus **never
+         attempted**. A decision span is present for every interposed evaluation
+         whatever it decided, so a gate that refuses a call and emits nothing is
+         indistinguishable downstream from a call that was never made. Every other
+         distinction is read from attributes. Consumers MUST partition on
+         `gen_ai.agent.authorization.outcome`, which is what separates `deny` from
+         `escalate`, from `error`, and from any outcome added later.
 
-         Invariant 3 holds in one direction only. `escalate` and `error` also emit no
-         child execute span, so a childless decision span does **not** by itself identify
-         a denial. Consumers MUST partition on `gen_ai.agent.authorization.outcome`. Span
-         shape distinguishes "evaluated" from "never attempted" (invariant 1); it does not
-         distinguish one outcome from another.
+      **Scope.** This operation models one interposed evaluation by a deciding component
+      and records the answer that component gave, not the final disposition of the
+      action. Interposition is a property of where the component sits, not of how the
+      host manages the calling request.
 
-      **Scope.** This operation models one evaluation by a deciding component and records
-      the answer that component gave, not the final disposition of the action. A decision
-      that defers to a higher authority (`outcome` = `escalate`) is complete when the
-      deferral is recorded. A resolution reached outside that evaluation is not a second
-      evaluation and is not represented by this operation. An execution that follows an
-      out-of-band approval therefore carries no decision span of its own; that gap is
-      stated rather than closed here.
+      A gate that is interposed but configured not to refuse (a monitoring, permissive
+      or dry-run deployment) is in scope. The action reached execution by passing it, so
+      `outcome` is `allow` and the basis is carried on
+      `gen_ai.agent.authorization.reason`.
+
+      A policy evaluated over activity that has already completed is not in scope. No
+      answer it reaches could have prevented the action, so it has no execution to
+      parent and invariant 2 does not hold for it. This convention does not say where
+      such an evaluation belongs; it says only that it is not this operation.
+
+      A decision that defers to a higher authority (`outcome` = `escalate`) is complete
+      when the deferral is recorded. A resolution reached outside that evaluation is not
+      a second evaluation and is not represented by this operation. An execution that
+      follows an out-of-band approval therefore carries no decision span of its own;
+      that gap is stated rather than closed here.
 
       The signal attributes (`gen_ai.agent.trust.*`, `drift.*`, `scan.*`,
       `public_key.algorithm`) are OPTIONAL producer-specific enrichment on this span,

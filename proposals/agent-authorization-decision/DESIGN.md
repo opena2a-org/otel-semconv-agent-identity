@@ -33,32 +33,57 @@ counter, and histogram. See `model/`.
 
 ## Structural invariants
 
-These are the load-bearing part of the design. They come directly from the #291 thread
-(the deny-vs-never-attempted distinction) and are what make the telemetry auditable.
+These come from the #291 thread (the deny-vs-never-attempted distinction) and are what
+make the telemetry auditable.
 
-1. A decision span is present **iff** the gate evaluated something.
+1. A decision span is present **iff** an **interposed** evaluation occurred. An
+   evaluation is interposed when the action could not have reached execution except by
+   passing it.
 2. A child execute span (`execute_tool`, `invoke_agent`, …) is present **iff** the
-   decision permitted execution (`allow` / `warn` / `transform`).
-3. A `deny` is a present span with **no** child execute span. A blocked call that emits
-   nothing is indistinguishable downstream from a call that never happened.
+   decision permitted execution (`allow` / `warn` / `transform`), and where present it
+   is a **direct child** of the decision span.
+3. Span shape carries **exactly one** distinction: evaluated versus never attempted. A
+   decision span is present for every interposed evaluation whatever it decided, so a
+   gate that refuses a call and emits nothing is indistinguishable downstream from a
+   call that never happened. Everything else is read from `outcome`.
 
-   Invariant 3 is one-directional and must not be read as an equality. `escalate` and
-   `error` also emit no child execute span (invariant 2 permits execution only for
-   `allow` / `warn` / `transform`), so "a decision span with no child" does not identify
-   a denial. The discriminator between outcomes is the `outcome` attribute; span shape
-   only separates "evaluated" from "never attempted".
+### What each one is doing
 
-Consequence: **"never attempted" is not an enum value.** If nothing was in the reachable
-surface, no decision was made, so there is no span and no `outcome`. Folding that into
-the enum would require emitting a decision for a non-event and reintroduce the exact
-ambiguity the enum is meant to remove. The distinction is preserved structurally:
-`deny` = a decision span with no child execute; "never attempted" = no decision span.
+**Invariant 1 is the scope boundary, not a formality.** Two different things produce no
+span, and neither is an enum value: nothing was in the reachable surface, so there was
+nothing to evaluate; or a policy was evaluated over activity that had already completed,
+which could not have borne on whether that activity ran. The second case is a real
+deployment shape and is excluded deliberately. See the non-goal below.
+
+**Invariant 2's parentage half is the only witness of interposition in the emitted
+data.** Nothing else distinguishes "this evaluation is what the execution passed
+through" from "this evaluation happened to be recorded near it". Two traces carrying the
+same span names, the same counts and the same attributes differ only in whether the
+execute span is a child or a sibling. `reference-scenarios/validate.py` asserts the
+parentage and rejects the sibling shape, and asserts that the rejection comes from the
+parentage check rather than from a span count, because at `outcome` = `allow` the counts
+are identical and every name-only check passes.
+
+**Invariant 3 is stated as a closed positive claim on purpose.** Its previous form was a
+negative caveat ("a childless span does not identify a denial"), which had to be rewritten
+every time another way of producing a childless span turned up, and that had already
+happened once before this revision. As a positive claim about what shape carries, it is
+stable under adding outcomes: any new outcome is read from the attribute like the
+existing ones.
+
+Consequence: **"never attempted" is not an enum value.** Folding it in would require
+emitting a decision for a non-event and would reintroduce the exact ambiguity the enum
+removes. The distinction stays structural: `deny` = a decision span with no child
+execute, "never attempted" = no decision span.
 
 ## Two independent producers (honest scope)
 
-The genuine cross-producer overlap is the **decision counter + duration histogram**
-(plus outcome), not the signal attributes. See `producer-mapping.md` for the exact
-per-producer table. Summary:
+The genuine cross-producer overlap is the **decision counter** (both attributed with
+the outcome) and the **duration histogram** as an instrument, not the signal attributes.
+Re-measured 2026-08-19: it is not the histogram's attributes either. AIM records
+`fga.latency_ms` bare, so `outcome` on the duration histogram is a one-producer
+requirement and is a reconciliation point on AIM's side. See `producer-mapping.md` for
+the exact per-producer table. Summary:
 
 - **AIM** (`agent-identity-management`, public): emits a `fga.authorize` span,
   a `fga.decisions` counter (with `fga.outcome` attribute, already the preferred
@@ -66,8 +91,12 @@ per-producer table. Summary:
   `gen_ai.agent.*` signal attributes on the decision span.
 - **AGT** (`microsoft/agent-governance-toolkit` [#3190](https://github.com/microsoft/agent-governance-toolkit/pull/3190),
   merged): emits the decision as `acs_intervention_{allow,deny,warn,escalate,transform}_total`
-  counters and an `acs_intervention_duration_ms` histogram. Emits **none** of the signal
-  attributes, and this proposal must not imply it does.
+  counters and an `acs_intervention_duration_ms` histogram, both carrying one shared
+  attribute set (`decision`, `reason_code`, `policy_id`, `enforcement_mode`,
+  `error_class`, `event_type`, `intervention_point`). Emits **none** of the signal
+  attributes, and this proposal must not imply it does. The "no span" claim is scoped to
+  **#3190**, which registers no tracer; the repository does ship governance spans
+  elsewhere, and they wrap the evaluation rather than an execution.
 
 ## Reconciliation points (reciprocal, not one-sided)
 
@@ -90,6 +119,18 @@ per-producer table. Summary:
   producer-agnostic decision inputs.
 - **Not** logs. The convention defines the span + metric shape; producers may also emit
   logs (AIM does) but the convention does not require it.
+- **Not** policy evaluated over activity that has already completed. A component that
+  receives reported activity and evaluates policy over it is answering the same
+  question, but no answer it reaches could have prevented the action, so it has no
+  execution to parent and invariant 2 does not hold for it. Admitting it would break
+  invariant 2 in both directions, and the refusing direction is the worse one: a
+  non-gating `deny` would be shape-identical to a real refusal while the action in fact
+  ran, which inverts the property invariant 3 exists to protect. It would also mix two
+  populations in the duration histogram, "how long the caller waited" against "how long
+  a batch evaluation took", and that histogram is half of the cross-producer overlap
+  this proposal rests on. This convention does not say where such an evaluation belongs.
+  That is a question for the maintainers, below, not an answer this proposal should
+  supply.
 
 ## Open questions for maintainers
 
@@ -102,6 +143,12 @@ per-producer table. Summary:
 - Span kind: `internal` (matches `execute_tool`) vs `server` for a standalone PDP service.
 - Whether the optional signal attributes belong in this proposal at all, or should be a
   separate follow-up once the operation lands.
+- Where a non-interposed policy evaluation belongs, if anywhere. This proposal excludes
+  it and does not propose a home for it. Asked without a preferred answer: it may belong
+  in a neighbouring operation, or it may be a producer-side detail the conventions do not
+  need to model.
+- Whether this operation and guardrail-style content checks should share an enforcement
+  axis, or stay separate operations that happen to run in one pass on some producers.
 
 ## Why the signal attributes are not being pushed for merge
 
