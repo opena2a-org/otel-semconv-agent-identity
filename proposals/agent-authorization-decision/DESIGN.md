@@ -103,14 +103,23 @@ per-producer table. Summary:
 - Whether the optional signal attributes belong in this proposal at all, or should be a
   separate follow-up once the operation lands.
 
-## Why the eight attributes are not being pushed for merge
+## Why the signal attributes are not being pushed for merge
 
 The bar the maintainer set is a real shared public component emitting the thing being
 standardized. Applied honestly to what is verifiable today:
 
 - The **decision operation** has **two** independent producers (AIM and AGT). Clears it.
-- The **eight signal attributes** have **one** (AIM, `agent-identity-management#324`).
-  AGT emits none of them. Does not clear it.
+- The **eight signal attributes carried from #291** have **one** (AIM,
+  `agent-identity-management#324`). AGT emits none of them. Does not clear it.
+- **`gen_ai.agent.public_key.verification` has none.** It was added here on 2026-08-19
+  from the #461 thread, and it is the one attribute in the model that no public producer
+  emits today: AIM's `fga.authorize` sets the key algorithm, trust, scan and drift, and
+  no verification outcome. It is in the model because the algorithm identifier is emitted
+  identically whether a signature verified, failed or was never checked, so nothing today
+  can carry that outcome. It must be argued on that gap, never on a producer count.
+
+That makes the signal group nine attributes: the eight from #291 plus the verification
+outcome. Do not restate the group as "eight".
 
 So the operation is what gets proposed, and the attributes come back later as optional
 enrichment carried by whichever producers actually have them. Arguing for the attributes

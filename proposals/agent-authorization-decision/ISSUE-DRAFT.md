@@ -1,6 +1,20 @@
 # Issue draft: `execute_authorization` decision operation
 
-**Status: drafted 2026-08-06, NOT filed.** Held deliberately.
+**Status: FILED 2026-08-18 as
+[genai#461](https://github.com/open-telemetry/semantic-conventions-genai/issues/461).**
+The body below is kept as the AS-FILED record. Do not edit it to match later decisions;
+that would destroy the record of what was actually posted.
+
+**One claim in it has since gone stale.** The validation paragraph says the patch "passes
+`weaver registry live-check` with exit code 0 and zero advisories". Re-run on 2026-08-19
+against `ca93747`: exit code 0 still holds, **zero advisories does not**. The current
+pinned conformance runner emits two `genai_operation_name_unknown` violations for any new
+`gen_ai.operation.name` member, and that rule did not exist in the pin the original run
+used. See `weaver-validated/README.md` for the measurement and for the two runner-side
+additions the clean result depends on. The filed issue body on GitHub carries the same
+sentence and has not been edited.
+
+**Status when drafted: 2026-08-06, NOT filed.** Held deliberately.
 
 Intended target: a new issue on `open-telemetry/semantic-conventions-genai`.
 Suggested title:
