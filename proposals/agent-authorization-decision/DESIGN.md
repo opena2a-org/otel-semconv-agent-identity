@@ -42,6 +42,12 @@ These are the load-bearing part of the design. They come directly from the #291 
 3. A `deny` is a present span with **no** child execute span. A blocked call that emits
    nothing is indistinguishable downstream from a call that never happened.
 
+   Invariant 3 is one-directional and must not be read as an equality. `escalate` and
+   `error` also emit no child execute span (invariant 2 permits execution only for
+   `allow` / `warn` / `transform`), so "a decision span with no child" does not identify
+   a denial. The discriminator between outcomes is the `outcome` attribute; span shape
+   only separates "evaluated" from "never attempted".
+
 Consequence: **"never attempted" is not an enum value.** If nothing was in the reachable
 surface, no decision was made, so there is no span and no `outcome`. Folding that into
 the enum would require emitting a decision for a non-event and reintroduce the exact

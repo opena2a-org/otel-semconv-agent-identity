@@ -44,7 +44,10 @@ groups:
           span (nothing was in the reachable surface, so nothing was attempted) is NOT
           represented by an enum value. A `deny` decision is still emitted as a present
           span with no child execute span beneath it, which is what keeps a denial
-          auditable after the fact.
+          auditable after the fact. That relationship is one-directional: `escalate` and
+          `error` also emit no child execute span, so the absence of a child does not by
+          itself identify a denial. Consumers MUST partition on this attribute rather
+          than on span shape to distinguish one outcome from another.
         type:
           members:
             - id: allow
@@ -71,17 +74,39 @@ groups:
               value: "error"
               brief: The decision could not be evaluated; see `error.type`.
               stability: experimental
-      - id: gen_ai.agent.authorization.policy
+      - id: gen_ai.agent.authorization.policy.name
         type: string
         stability: experimental
         brief: >
           Identifier of the policy, ruleset, or engine that produced the decision.
           Opaque; compared for equality only. Lets a consumer attribute a decision to
           the governing policy without parsing its internals.
+        note: >
+          This attribute identifies the policy; it does not identify the revision of the
+          policy that was in force. Where the producer's policy store is revisioned, the
+          revision belongs on `gen_ai.agent.authorization.policy.version`. It is NOT
+          RECOMMENDED to encode a revision inside this value, because a consumer that
+          compares it for equality only cannot recover it.
         examples:
           - "aim/fga"
           - "agent_control_specification"
-          - "policy-set:prod-v7"
+          - "policy-set:prod"
+      - id: gen_ai.agent.authorization.policy.version
+        type: string
+        stability: experimental
+        brief: >
+          The revision of the policy or ruleset that was in force when the decision was
+          evaluated. Any value that stably identifies that revision within the producer's
+          scope.
+        note: >
+          A policy store is mutable. Without this attribute a record names the policy but
+          not what that policy said at evaluation time, so it can only be read against
+          whatever the policy says when the record is read. A producer whose policy store
+          carries no revision identifier omits this attribute.
+        examples:
+          - "v7"
+          - "42"
+          - "sha256:9f2b1c"
       - id: gen_ai.agent.authorization.reason
         type: string
         stability: experimental
@@ -114,7 +139,38 @@ groups:
         type: string
         stability: experimental
         brief: Cryptographic algorithm of the agent's identity keypair.
+        note: >
+          This records which algorithm was presented, and is emitted identically whether a
+          signature verified, failed, or was never checked. It does NOT carry the outcome of
+          verification; use `gen_ai.agent.public_key.verification` for that.
         examples: ["ed25519", "ml-dsa-65", "ed25519+ml-dsa-65"]
+      - id: gen_ai.agent.public_key.verification
+        stability: experimental
+        brief: >
+          Outcome of verifying the agent's identity signature, as resolved before the
+          decision was evaluated. Observable only to the deciding component: instrumentation
+          at the agent level sees the algorithm identifier but never the result of checking
+          it, which is why this belongs on the decision rather than on an agent span.
+        type:
+          members:
+            - id: verified
+              value: "verified"
+              brief: A signature was presented and verified against the agent's registered key.
+              stability: experimental
+            - id: failed
+              value: "failed"
+              brief: A signature was presented and did not verify.
+              stability: experimental
+            - id: unbound
+              value: "unbound"
+              brief: >
+                The agent identity was self-asserted; no signature was presented to bind it
+                to a registered key.
+              stability: experimental
+            - id: not_checked
+              value: "not_checked"
+              brief: The deciding component did not attempt verification.
+              stability: experimental
       - id: gen_ai.agent.trust.score
         type: double
         stability: experimental

@@ -31,7 +31,7 @@ are from primary source (PR [#3190](https://github.com/microsoft/agent-governanc
 |---|---|---|
 | `gen_ai.execute_authorization` span | `fga.authorize` | (no span yet) |
 | `gen_ai.agent.authorization.outcome` | `fga.outcome` | the counter name suffix |
-| `gen_ai.agent.authorization.policy` | meter `aim/fga` | meter `agent_control_specification` |
+| `gen_ai.agent.authorization.policy.name` | meter `aim/fga` | meter `agent_control_specification` |
 | `gen_ai.agent.authorization.reason` | `fga.denied_by` | (n/a) |
 | `gen_ai.agent.authorization.decisions` | `fga.decisions` | `acs_intervention_*_total` (collapse) |
 | `gen_ai.agent.authorization.duration` | `fga.latency_ms` (→ s) | `acs_intervention_duration_ms` (→ s) |

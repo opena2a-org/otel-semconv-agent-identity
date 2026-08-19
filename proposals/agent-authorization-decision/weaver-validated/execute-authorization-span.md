@@ -11,17 +11,19 @@
 
 | Attribute | Supporting Libraries |
 | --- | --- |
+| gen_ai.agent.authorization.policy.version | [agent-authorization-decision] |
 | gen_ai.agent.authorization.reason | [agent-authorization-decision] |
+| gen_ai.agent.drift.method | [agent-authorization-decision] |
+| gen_ai.agent.public_key.verification | [agent-authorization-decision] |
+| gen_ai.agent.scan.method | [agent-authorization-decision] |
+| gen_ai.agent.trust.method | [agent-authorization-decision] |
 
 ## Recommended
 
 | Attribute | Supporting Libraries |
 | --- | --- |
-| gen_ai.agent.authorization.policy | [agent-authorization-decision] |
+| gen_ai.agent.authorization.policy.name | [agent-authorization-decision] |
 | gen_ai.agent.capability | [agent-authorization-decision] |
-| gen_ai.agent.drift.method | [agent-authorization-decision] |
-| gen_ai.agent.scan.method | [agent-authorization-decision] |
-| gen_ai.agent.trust.method | [agent-authorization-decision] |
 
 ## Opt-In
 

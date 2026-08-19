@@ -10,8 +10,13 @@ attribute_groups:
       - ref: gen_ai.agent.authorization.outcome
         requirement_level: required
         sampling_relevant: true
-      - ref: gen_ai.agent.authorization.policy
+      - ref: gen_ai.agent.authorization.policy.name
         requirement_level: recommended
+      - ref: gen_ai.agent.authorization.policy.version
+        requirement_level:
+          conditionally_required: >
+            When `gen_ai.agent.authorization.policy.name` is set and the producer's policy
+            store carries a revision identifier.
       - ref: gen_ai.agent.authorization.reason
         requirement_level:
           conditionally_required: When `gen_ai.agent.authorization.outcome` is not `allow`.
@@ -49,6 +54,20 @@ spans:
          child execute span beneath it. A gate that blocks a call and emits nothing is
          indistinguishable downstream from a call that never happened.
 
+         Invariant 3 holds in one direction only. `escalate` and `error` also emit no
+         child execute span, so a childless decision span does **not** by itself identify
+         a denial. Consumers MUST partition on `gen_ai.agent.authorization.outcome`. Span
+         shape distinguishes "evaluated" from "never attempted" (invariant 1); it does not
+         distinguish one outcome from another.
+
+      **Scope.** This operation models one evaluation by a deciding component and records
+      the answer that component gave, not the final disposition of the action. A decision
+      that defers to a higher authority (`outcome` = `escalate`) is complete when the
+      deferral is recorded. A resolution reached outside that evaluation is not a second
+      evaluation and is not represented by this operation. An execution that follows an
+      out-of-band approval therefore carries no decision span of its own; that gap is
+      stated rather than closed here.
+
       The signal attributes (`gen_ai.agent.trust.*`, `drift.*`, `scan.*`,
       `public_key.algorithm`) are OPTIONAL producer-specific enrichment on this span,
       not part of the operation's required shape.
@@ -62,6 +81,9 @@ spans:
       # --- OPTIONAL signal enrichment (opt_in; only producers that compute them) ---
       - ref: gen_ai.agent.public_key.algorithm
         requirement_level: opt_in
+      - ref: gen_ai.agent.public_key.verification
+        requirement_level:
+          conditionally_required: When `gen_ai.agent.public_key.algorithm` is set.
       - ref: gen_ai.agent.trust.score
         requirement_level: opt_in
       - ref: gen_ai.agent.trust.method

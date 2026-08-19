@@ -21,7 +21,8 @@ OP = "execute_authorization"
 class Decision:
     """What a gate's decide() returns. The span is populated from this object."""
     outcome: str                      # allow | deny | warn | escalate | transform | error
-    policy: str                       # opaque policy/ruleset id
+    policy: str                       # opaque policy/ruleset id (name only, no revision)
+    policy_version: str               # revision in force at evaluation time
     capability: str                   # what was being authorized
     reason: Optional[str] = None      # required when outcome != allow
     # optional producer-specific signal enrichment (only if the gate computes them)
@@ -36,6 +37,7 @@ class Gate:
         return Decision(
             outcome="deny",
             policy="aim/fga",
+            policy_version="2026.08.1",
             capability=capability,
             reason="capability_denied",
             signals={
@@ -57,7 +59,8 @@ def authorize_and_maybe_execute(gate: Gate, capability: str) -> Decision:
         decision = gate.decide(capability)
         span.set_attribute("gen_ai.operation.name", OP)
         span.set_attribute("gen_ai.agent.authorization.outcome", decision.outcome)
-        span.set_attribute("gen_ai.agent.authorization.policy", decision.policy)
+        span.set_attribute("gen_ai.agent.authorization.policy.name", decision.policy)
+        span.set_attribute("gen_ai.agent.authorization.policy.version", decision.policy_version)
         span.set_attribute("gen_ai.agent.capability", decision.capability)
         if decision.outcome != "allow" and decision.reason:
             span.set_attribute("gen_ai.agent.authorization.reason", decision.reason)

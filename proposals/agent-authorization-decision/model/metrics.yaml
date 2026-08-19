@@ -10,7 +10,7 @@ attribute_groups:
     attributes:
       - ref: gen_ai.agent.authorization.outcome
         requirement_level: required
-      - ref: gen_ai.agent.authorization.policy
+      - ref: gen_ai.agent.authorization.policy.name
         requirement_level: recommended
 
 metrics:

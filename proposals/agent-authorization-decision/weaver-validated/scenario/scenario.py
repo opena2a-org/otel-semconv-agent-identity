@@ -37,6 +37,7 @@ class AuthorizationDecision:
     policy: str
     capability: str
     reason: str | None = None                 # required when outcome != allow
+    policy_version: str = "2026.08.1"
     signals: dict = field(default_factory=dict)  # optional producer enrichment
 
 
@@ -53,6 +54,7 @@ class AuthorizationGate:
                 capability=capability,
                 signals={
                     "gen_ai.agent.public_key.algorithm": "Ed25519",
+                    "gen_ai.agent.public_key.verification": "verified",
                     "gen_ai.agent.trust.score": 0.93,
                     "gen_ai.agent.trust.method": "trust-model@2.3.1",
                     "gen_ai.agent.drift.score": 0.04,
@@ -80,7 +82,8 @@ def _emit_decision(decision: AuthorizationDecision):
     span_attributes = {
         "gen_ai.operation.name": "execute_authorization",
         "gen_ai.agent.authorization.outcome": decision.outcome,
-        "gen_ai.agent.authorization.policy": decision.policy,
+        "gen_ai.agent.authorization.policy.name": decision.policy,
+        "gen_ai.agent.authorization.policy.version": decision.policy_version,
         "gen_ai.agent.capability": decision.capability,
     }
     if decision.outcome != "allow" and decision.reason is not None:
@@ -97,6 +100,8 @@ def _emit_decision(decision: AuthorizationDecision):
                 attributes={
                     "gen_ai.operation.name": "execute_tool",
                     "gen_ai.tool.name": "query_database",
+                    "gen_ai.tool.call.id": "call_ref_0001",
+                    "gen_ai.tool.type": "function",
                 },
             ):
                 pass
